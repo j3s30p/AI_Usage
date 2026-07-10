@@ -221,16 +221,57 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
         XCTAssertNil(query[kSecUseAuthenticationUI])
     }
 
-    func testUserInitiatedAccessReturnsOnlySanitizedCredentialState() async {
+    func testUserInitiatedAuthorizationUsesValidFileWithoutReadingKeychain() async {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let credentialsURL = URL(fileURLWithPath: "/tmp/claude-file-only-credentials.json")
+        let loadedURL = LockedBox<URL?>(nil)
+        let keychainReadCount = LockedBox(0)
         let secret = "credential-must-never-escape"
         let credentialData = credentialJSON(
             accessToken: secret,
             expiresAt: now.addingTimeInterval(3_600)
         )
-        let access = ClaudeOAuthUserInitiatedKeychainAccess(
+        let authorization = ClaudeOAuthUserInitiatedAuthorization(
+            credentialsURL: credentialsURL,
+            fileReader: { url in
+                loadedURL.set(url)
+                return credentialData
+            },
             keychainReader: {
-                ClaudeOAuthKeychainReadResult(
+                keychainReadCount.withValue { $0 += 1 }
+                return ClaudeOAuthKeychainReadResult(
+                    status: errSecUserCanceled,
+                    data: nil
+                )
+            },
+            now: { now }
+        )
+
+        let result = await authorization.requestAccessFromUserAction()
+
+        XCTAssertEqual(result, .available)
+        XCTAssertEqual(loadedURL.value, credentialsURL)
+        XCTAssertEqual(keychainReadCount.value, 0)
+        XCTAssertFalse(String(describing: result).contains(secret))
+    }
+
+    func testUserInitiatedAuthorizationFallsBackToKeychainWhenFileIsUnusable() async {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let fileReadCount = LockedBox(0)
+        let keychainReadCount = LockedBox(0)
+        let secret = "fallback-keychain-secret"
+        let credentialData = credentialJSON(
+            accessToken: secret,
+            expiresAt: now.addingTimeInterval(3_600)
+        )
+        let authorization = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in
+                fileReadCount.withValue { $0 += 1 }
+                return Data("invalid-file-credential".utf8)
+            },
+            keychainReader: {
+                keychainReadCount.withValue { $0 += 1 }
+                return ClaudeOAuthKeychainReadResult(
                     status: errSecSuccess,
                     data: credentialData
                 )
@@ -238,14 +279,17 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
             now: { now }
         )
 
-        let result = await access.requestAccessFromUserAction()
+        let result = await authorization.requestAccessFromUserAction()
 
         XCTAssertEqual(result, .available)
+        XCTAssertEqual(fileReadCount.value, 1)
+        XCTAssertEqual(keychainReadCount.value, 1)
         XCTAssertFalse(String(describing: result).contains(secret))
     }
 
-    func testUserInitiatedAccessSanitizesDeniedCancelledAndInvalidResults() async {
-        let denied = ClaudeOAuthUserInitiatedKeychainAccess(
+    func testUserInitiatedAuthorizationPreservesCancelledAndErrorResults() async {
+        let denied = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in nil },
             keychainReader: {
                 ClaudeOAuthKeychainReadResult(
                     status: errSecAuthFailed,
@@ -253,7 +297,8 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
                 )
             }
         )
-        let cancelled = ClaudeOAuthUserInitiatedKeychainAccess(
+        let cancelled = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in nil },
             keychainReader: {
                 ClaudeOAuthKeychainReadResult(
                     status: errSecUserCanceled,
@@ -261,7 +306,8 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
                 )
             }
         )
-        let invalid = ClaudeOAuthUserInitiatedKeychainAccess(
+        let invalid = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in nil },
             keychainReader: {
                 ClaudeOAuthKeychainReadResult(
                     status: errSecSuccess,
@@ -269,30 +315,48 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
                 )
             }
         )
+        let unavailable = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in nil },
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecNotAvailable,
+                    data: Data("unavailable-secret".utf8)
+                )
+            }
+        )
 
         let deniedResult = await denied.requestAccessFromUserAction()
         let cancelledResult = await cancelled.requestAccessFromUserAction()
         let invalidResult = await invalid.requestAccessFromUserAction()
+        let unavailableResult = await unavailable.requestAccessFromUserAction()
 
         XCTAssertEqual(deniedResult, .denied)
         XCTAssertEqual(cancelledResult, .cancelled)
         XCTAssertEqual(invalidResult, .invalidCredentials)
-        let descriptions = [deniedResult, cancelledResult, invalidResult]
+        XCTAssertEqual(unavailableResult, .unavailable)
+        let descriptions = [
+            deniedResult,
+            cancelledResult,
+            invalidResult,
+            unavailableResult,
+        ]
             .map(String.init(describing:))
             .joined(separator: " ")
         XCTAssertFalse(descriptions.contains("denied-secret"))
         XCTAssertFalse(descriptions.contains("cancelled-secret"))
         XCTAssertFalse(descriptions.contains("invalid-secret"))
+        XCTAssertFalse(descriptions.contains("unavailable-secret"))
     }
 
-    func testUserInitiatedAccessReportsExpiredWithoutReturningCredential() async {
+    func testUserInitiatedAuthorizationReportsExpiredWithoutReturningCredential() async {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
         let secret = "expired-secret"
         let credentialData = credentialJSON(
             accessToken: secret,
             expiresAt: now.addingTimeInterval(-1)
         )
-        let access = ClaudeOAuthUserInitiatedKeychainAccess(
+        let authorization = ClaudeOAuthUserInitiatedAuthorization(
+            fileReader: { _ in nil },
             keychainReader: {
                 ClaudeOAuthKeychainReadResult(
                     status: errSecSuccess,
@@ -302,7 +366,7 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
             now: { now }
         )
 
-        let result = await access.requestAccessFromUserAction()
+        let result = await authorization.requestAccessFromUserAction()
 
         XCTAssertEqual(result, .expired)
         XCTAssertFalse(String(describing: result).contains(secret))

@@ -114,6 +114,68 @@ final class CodexUsageProviderTests: XCTestCase {
         provider.shutdown()
     }
 
+    func testInitialFullReadsSelectNormalSnapshotWithLatestReset() async throws {
+        let client = FakeCodexAppServerClient(responses: [
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_000)),
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_000)),
+            .success(makeResponse(used: 23, primaryResetAt: 1_900_003_000)),
+        ])
+        let provider = CodexUsageProvider(clientFactory: { client })
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 77)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_003_000)
+        XCTAssertEqual(client.fetchCount, 3)
+        provider.shutdown()
+    }
+
+    func testInitialConfirmedFullUsageRemainsFull() async throws {
+        let client = FakeCodexAppServerClient(responses: [
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_000)),
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_100)),
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_200)),
+        ])
+        let provider = CodexUsageProvider(clientFactory: { client })
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 100)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_000_200)
+        XCTAssertEqual(client.fetchCount, 3)
+        provider.shutdown()
+    }
+
+    func testInitialConfirmationFailureKeepsFirstValidFullSnapshot() async throws {
+        let initial = makeResponse(used: 0, primaryResetAt: 1_900_000_000)
+        let client = FakeCodexAppServerClient(responses: [
+            .success(initial),
+            .failure(TestFailure.offline),
+            .failure(TestFailure.offline),
+        ])
+        let provider = CodexUsageProvider(clientFactory: { client })
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 100)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_000_000)
+        XCTAssertEqual(client.fetchCount, 3)
+        provider.shutdown()
+    }
+
+    func testInitialNonFullReadDoesNotIssueConfirmationReads() async throws {
+        let client = FakeCodexAppServerClient(responses: [
+            .success(makeResponse(used: 25)),
+        ])
+        let provider = CodexUsageProvider(clientFactory: { client })
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 75)
+        XCTAssertEqual(client.fetchCount, 1)
+        provider.shutdown()
+    }
+
     func testStopPreventsOldReconnectButLaterSubscriptionCanStartAgain() async throws {
         let offline = FakeCodexAppServerClient(responses: [.failure(TestFailure.offline)])
         let recovered = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 15))])
@@ -287,13 +349,16 @@ private final class FakeCodexAppServerClient: CodexAppServerServing, @unchecked 
     }
 }
 
-private func makeResponse(used: Double) -> CodexRateLimitsResponse {
+private func makeResponse(
+    used: Double,
+    primaryResetAt: Int64 = 1_900_000_000
+) -> CodexRateLimitsResponse {
     CodexRateLimitsResponse(
         rateLimits: .init(
             primary: .init(
                 usedPercent: used,
                 windowDurationMins: 300,
-                resetsAt: 1_900_000_000
+                resetsAt: primaryResetAt
             ),
             secondary: .init(
                 usedPercent: used / 2,

@@ -74,8 +74,6 @@ jobs:
 
           mkdir -p "$stage"
           cp -R "$app" "$stage/AiUsage.app"
-          install -m 755 Scripts/claude-statusline-aiusage.sh \
-            "$stage/claude-statusline-aiusage.sh"
           ditto -c -k --sequesterRsrc "$stage" "$artifact"
 
           verify="$RUNNER_TEMP/verify"
@@ -84,7 +82,9 @@ jobs:
           lipo "$verify/AiUsage.app/Contents/MacOS/AiUsage" \
             -verify_arch arm64 x86_64
           codesign --verify --deep --strict --verbose=2 "$verify/AiUsage.app"
-          test -x "$verify/claude-statusline-aiusage.sh"
+          bundled_helper="$verify/AiUsage.app/Contents/Resources/claude-statusline-aiusage.sh"
+          test -f "$bundled_helper"
+          cmp Scripts/claude-statusline-aiusage.sh "$bundled_helper"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$verify/AiUsage.app/Contents/Info.plist")" = "$VERSION"
 

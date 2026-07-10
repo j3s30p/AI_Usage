@@ -50,6 +50,84 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.state(for: .claude).snapshot, current)
     }
 
+    func testRefreshRetainsCodexSnapshotWhenActiveFiveHourWindowRegresses() async {
+        let now = Date(timeIntervalSince1970: 20_000)
+        let current = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.77,
+            resetAt: now.addingTimeInterval(4 * 3_600),
+            fetchedAt: now
+        )
+        let regressive = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 1,
+            resetAt: now.addingTimeInterval(3 * 3_600),
+            fetchedAt: now.addingTimeInterval(1)
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.codex: .success(current)],
+            [.codex: .success(regressive)],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.codex])
+        await model.refresh(providers: [.codex])
+
+        XCTAssertEqual(model.state(for: .codex).snapshot, current)
+    }
+
+    func testRefreshAllowsCodexFullRemainingAfterPreviousWindowExpires() async {
+        let now = Date(timeIntervalSince1970: 30_000)
+        let current = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.25,
+            resetAt: now.addingTimeInterval(60),
+            fetchedAt: now
+        )
+        let reset = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 1,
+            resetAt: now.addingTimeInterval(3_720),
+            fetchedAt: now.addingTimeInterval(120)
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.codex: .success(current)],
+            [.codex: .success(reset)],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.codex])
+        await model.refresh(providers: [.codex])
+
+        XCTAssertEqual(model.state(for: .codex).snapshot, reset)
+    }
+
+    func testRefreshAllowsCodexFullRemainingWhenResetMovesForward() async {
+        let now = Date(timeIntervalSince1970: 40_000)
+        let current = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.25,
+            resetAt: now.addingTimeInterval(3_600),
+            fetchedAt: now
+        )
+        let reset = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 1,
+            resetAt: now.addingTimeInterval(7_200),
+            fetchedAt: now.addingTimeInterval(1)
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.codex: .success(current)],
+            [.codex: .success(reset)],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.codex])
+        await model.refresh(providers: [.codex])
+
+        XCTAssertEqual(model.state(for: .codex).snapshot, reset)
+    }
+
     func testChangingClaudeModeAcceptsOlderSnapshotFromNewSource() async {
         let now = Date(timeIntervalSince1970: 17_000)
         let oauthSnapshot = makeSnapshot(
@@ -243,6 +321,55 @@ final class AppModelTests: XCTestCase {
         await monitorTask.value
     }
 
+    func testMonitorRetainsCodexSnapshotWhenActiveWeeklyWindowRegresses() async {
+        let now = Date(timeIntervalSince1970: 45_000)
+        let current = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.77,
+            resetAt: now.addingTimeInterval(4 * 3_600),
+            weekly: UsageLimitWindow(
+                remainingFraction: 0.96,
+                resetAt: now.addingTimeInterval(7 * 24 * 3_600)
+            ),
+            fetchedAt: now
+        )
+        let regressive = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.76,
+            resetAt: current.resetAt,
+            weekly: UsageLimitWindow(
+                remainingFraction: 0.99,
+                resetAt: now.addingTimeInterval(6 * 24 * 3_600)
+            ),
+            fetchedAt: now.addingTimeInterval(1)
+        )
+        let repository = StreamingUsageRepository(responses: [])
+        repository.send(.success(current))
+        let model = AppModel(repository: repository)
+        let monitorTask = Task {
+            await model.monitor(
+                providers: [.codex],
+                refreshInterval: .seconds(60)
+            )
+        }
+
+        let receivedInitial = await waitUntil {
+            model.state(for: .codex).snapshot == current
+        }
+        XCTAssertTrue(receivedInitial)
+        repository.send(.success(regressive))
+        repository.send(.failure(UsageFailure(message: "weekly regression processed")))
+        let processedRegression = await waitUntil {
+            model.state(for: .codex).failure?.message == "weekly regression processed"
+        }
+        XCTAssertTrue(processedRegression)
+        XCTAssertEqual(model.state(for: .codex).snapshot, current)
+
+        monitorTask.cancel()
+        repository.finishUpdates()
+        await monitorTask.value
+    }
+
     func testMonitorRetainsCodexSnapshotWhenPushReportsFailure() async {
         let now = Date(timeIntervalSince1970: 50_000)
         let current = makeSnapshot(
@@ -312,14 +439,14 @@ final class AppModelTests: XCTestCase {
         await monitorTask.value
     }
 
-    func testMonitorForwardsSelectedClaudeUsageMode() async {
+    func testMonitorForwardsSelectedClaudeOAuthMode() async {
         let repository = StreamingUsageRepository(responses: [])
         let model = AppModel(repository: repository)
         let monitorTask = Task {
             await model.monitor(
                 providers: [.claude],
                 refreshInterval: .seconds(60),
-                claudeUsageMode: .cliUsage
+                claudeUsageMode: .oauth
             )
         }
 
@@ -327,7 +454,7 @@ final class AppModelTests: XCTestCase {
             repository.fetchCount == 1
         }
         XCTAssertTrue(receivedInitialFetch)
-        XCTAssertEqual(repository.claudeUsageModes, [.cliUsage])
+        XCTAssertEqual(repository.claudeUsageModes, [.oauth])
 
         monitorTask.cancel()
         await monitorTask.value
@@ -377,12 +504,15 @@ final class AppModelTests: XCTestCase {
     private func makeSnapshot(
         provider: UsageProvider,
         remainingFraction: Double,
+        resetAt: Date? = nil,
+        weekly: UsageLimitWindow? = nil,
         fetchedAt: Date
     ) -> UsageSnapshot {
         UsageSnapshot(
             provider: provider,
             remainingFraction: remainingFraction,
-            resetAt: fetchedAt.addingTimeInterval(3_600),
+            resetAt: resetAt ?? fetchedAt.addingTimeInterval(3_600),
+            weekly: weekly,
             fetchedAt: fetchedAt
         )
     }

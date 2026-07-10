@@ -4,6 +4,8 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    private static let codexResetRegressionTolerance: TimeInterval = 60
+
     private(set) var states: [UsageProvider: ProviderLoadState]
     private(set) var isRefreshing = false
     private(set) var lastRefreshAt: Date?
@@ -71,11 +73,11 @@ final class AppModel {
                 let previous = state(for: provider).snapshot
                 switch result {
                 case .success(let snapshot):
-                    if let previous, snapshot.fetchedAt < previous.fetchedAt {
-                        states[provider] = .loaded(previous)
-                    } else {
-                        states[provider] = .loaded(snapshot)
-                    }
+                    applySuccessfulSnapshot(
+                        snapshot,
+                        for: provider,
+                        previous: previous
+                    )
                 case .failure(let failure):
                     states[provider] = .failed(failure, previous: previous)
                 case nil:
@@ -154,13 +156,77 @@ final class AppModel {
         let previous = state(for: update.provider).snapshot
         switch update.result {
         case .success(let snapshot):
-            if let previous, snapshot.fetchedAt < previous.fetchedAt {
-                return
-            }
-            states[update.provider] = .loaded(snapshot)
+            applySuccessfulSnapshot(
+                snapshot,
+                for: update.provider,
+                previous: previous
+            )
         case .failure(let failure):
             states[update.provider] = .failed(failure, previous: previous)
         }
         lastRefreshAt = .now
+    }
+
+    private func applySuccessfulSnapshot(
+        _ candidate: UsageSnapshot,
+        for provider: UsageProvider,
+        previous: UsageSnapshot?
+    ) {
+        guard let previous else {
+            states[provider] = .loaded(candidate)
+            return
+        }
+
+        guard candidate.fetchedAt >= previous.fetchedAt,
+            !shouldRetainPreviousCodexSnapshot(
+                previous,
+                insteadOf: candidate,
+                for: provider
+            )
+        else {
+            states[provider] = .loaded(previous)
+            return
+        }
+
+        states[provider] = .loaded(candidate)
+    }
+
+    private func shouldRetainPreviousCodexSnapshot(
+        _ previous: UsageSnapshot,
+        insteadOf candidate: UsageSnapshot,
+        for provider: UsageProvider
+    ) -> Bool {
+        guard provider == .codex else { return false }
+
+        if isRegressiveActiveWindow(
+            previous: previous.fiveHour,
+            candidate: candidate.fiveHour,
+            at: candidate.fetchedAt
+        ) {
+            return true
+        }
+
+        guard let previousWeekly = previous.weekly,
+            let candidateWeekly = candidate.weekly
+        else { return false }
+
+        return isRegressiveActiveWindow(
+            previous: previousWeekly,
+            candidate: candidateWeekly,
+            at: candidate.fetchedAt
+        )
+    }
+
+    private func isRegressiveActiveWindow(
+        previous: UsageLimitWindow,
+        candidate: UsageLimitWindow,
+        at fetchedAt: Date
+    ) -> Bool {
+        guard previous.resetAt > fetchedAt,
+            candidate.remainingFraction > previous.remainingFraction
+        else { return false }
+
+        return previous.resetAt.timeIntervalSince(candidate.resetAt)
+            > Self.codexResetRegressionTolerance
     }
 }

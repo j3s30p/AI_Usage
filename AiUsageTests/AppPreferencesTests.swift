@@ -31,7 +31,7 @@ final class AppPreferencesTests: XCTestCase {
         preferences.showPercentage = false
         preferences.providerDisplayMode = .logo
         preferences.refreshInterval = .fifteenMinutes
-        preferences.claudeUsageMode = .cliUsage
+        preferences.claudeUsageMode = .oauth
 
         let reloaded = AppPreferences(defaults: defaults)
         XCTAssertFalse(reloaded.showCodex)
@@ -39,7 +39,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertFalse(reloaded.showPercentage)
         XCTAssertEqual(reloaded.providerDisplayMode, .logo)
         XCTAssertEqual(reloaded.refreshInterval, .fifteenMinutes)
-        XCTAssertEqual(reloaded.claudeUsageMode, .cliUsage)
+        XCTAssertEqual(reloaded.claudeUsageMode, .oauth)
         XCTAssertEqual(reloaded.enabledProviders, [.claude])
     }
 
@@ -52,6 +52,18 @@ final class AppPreferencesTests: XCTestCase {
         let preferences = AppPreferences(defaults: defaults)
 
         XCTAssertEqual(preferences.claudeUsageMode, .statusLine)
+    }
+
+    func testLegacyCLIUsageModeMigratesToStatusLine() throws {
+        let suiteName = "AppPreferencesTests.legacyCLIUsageMode.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("cliUsage", forKey: "claudeUsageMode")
+
+        let preferences = AppPreferences(defaults: defaults)
+
+        XCTAssertEqual(preferences.claudeUsageMode, .statusLine)
+        XCTAssertEqual(defaults.string(forKey: "claudeUsageMode"), "statusLine")
     }
 
     func testEveryClaudeUsageModePersists() throws {
@@ -70,22 +82,12 @@ final class AppPreferencesTests: XCTestCase {
         }
     }
 
-    func testClaudeUsageModesExposeOnlyTheirOwnExperimentalCapability() {
-        XCTAssertFalse(ClaudeUsageMode.statusLine.allowsOAuthUsage)
-        XCTAssertFalse(ClaudeUsageMode.statusLine.allowsCLIUsage)
-        XCTAssertTrue(ClaudeUsageMode.oauth.allowsOAuthUsage)
-        XCTAssertFalse(ClaudeUsageMode.oauth.allowsCLIUsage)
-        XCTAssertFalse(ClaudeUsageMode.cliUsage.allowsOAuthUsage)
-        XCTAssertTrue(ClaudeUsageMode.cliUsage.allowsCLIUsage)
-    }
-
     func testClaudeUsageModesExposeExpectedDisplayNames() {
         XCTAssertEqual(
             ClaudeUsageMode.allCases.map(\.displayName),
             [
                 "statusLine 캐시 (권장)",
                 "OAuth Keychain (실험적)",
-                "CLI /usage (실험적)",
             ]
         )
     }

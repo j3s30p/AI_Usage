@@ -6,6 +6,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel(repository: UsageRepository())
     let preferences = AppPreferences()
+    let statusLineSettingsModel = ClaudeStatusLineSettingsModel()
 
     private var menuBarController: MenuBarController?
     private var monitorTask: Task<Void, Never>?
@@ -28,17 +29,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.shutdown()
     }
 
-    func connectClaudeKeychainFromUserAction() async throws {
-        let result = await ClaudeOAuthUserInitiatedKeychainAccess()
-            .requestAccessFromUserAction()
-        guard result == .available else {
-            throw ClaudeKeychainConnectionError(result: result)
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Task {
+            await statusLineSettingsModel.refresh()
         }
+    }
 
-        await model.refresh(
-            providers: [.claude],
-            claudeUsageMode: .oauth
-        )
+    func authorizeClaudeOAuthFromUserSelection()
+        async -> ClaudeOAuthUserInitiatedAccessResult
+    {
+        await ClaudeOAuthUserInitiatedAuthorization()
+            .requestAccessFromUserAction()
     }
 
     private func restartMonitor() {
@@ -105,29 +106,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 menuBarController?.updateStatusItem()
                 observeModel()
             }
-        }
-    }
-}
-
-private struct ClaudeKeychainConnectionError: LocalizedError {
-    let result: ClaudeOAuthUserInitiatedAccessResult
-
-    var errorDescription: String? {
-        switch result {
-        case .available:
-            nil
-        case .notFound:
-            "Claude Code Keychain 항목을 찾지 못했습니다."
-        case .denied:
-            "Claude Code Keychain 접근이 거부되었습니다."
-        case .cancelled:
-            "Claude Code Keychain 연결이 취소되었습니다."
-        case .invalidCredentials:
-            "Claude Code Keychain 인증 정보를 확인할 수 없습니다."
-        case .expired:
-            "Claude Code Keychain 인증 정보가 만료되었습니다."
-        case .unavailable:
-            "Claude Code Keychain을 사용할 수 없습니다."
         }
     }
 }

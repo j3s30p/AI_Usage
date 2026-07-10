@@ -9,8 +9,9 @@ struct AiUsageApp: App {
         Settings {
             SettingsView(
                 preferences: appDelegate.preferences,
-                onConnectClaudeKeychain: {
-                    try await appDelegate.connectClaudeKeychainFromUserAction()
+                statusLineModel: appDelegate.statusLineSettingsModel,
+                onAuthorizeClaudeOAuth: {
+                    await appDelegate.authorizeClaudeOAuthFromUserSelection()
                 }
             )
         }

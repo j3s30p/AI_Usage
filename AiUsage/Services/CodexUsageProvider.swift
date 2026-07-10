@@ -16,6 +16,9 @@ final actor CodexUsageProvider: UsageFetching {
 
     typealias ClientFactory = @Sendable () throws -> any CodexAppServerServing
 
+    private static let effectivelyFullRemainingFraction = 0.995
+    private static let initialConfirmationReadCount = 2
+
     private struct ConnectionOperation {
         let id: UUID
         let clientID: UUID
@@ -118,6 +121,7 @@ final actor CodexUsageProvider: UsageFetching {
     private var activeSession: UInt64?
     private var subscribers: [UUID: Subscriber] = [:]
     private var lastPublishedReadID: UUID?
+    private var hasCompletedInitialSuccessfulRead = false
     private var outageFailureEmitted = false
     private var pendingImmediateRefresh = false
     private var pendingConnectionClosed = false
@@ -331,22 +335,39 @@ final actor CodexUsageProvider: UsageFetching {
 
     private func authoritativeRead() async throws -> ReadResult {
         if let operation = readOperation {
-            return try await operation.task.value
+            let result = try await operation.task.value
+            hasCompletedInitialSuccessfulRead = true
+            return result
         }
 
         let connectedClient = try await ensureConnected()
         // Connection initialization is an actor reentrancy point. Another caller may have
         // installed the shared read while this caller was waiting for the same handshake.
         if let operation = readOperation {
-            return try await operation.task.value
+            let result = try await operation.task.value
+            hasCompletedInitialSuccessfulRead = true
+            return result
         }
 
         let operationID = UUID()
+        let shouldConfirmInitialRead = !hasCompletedInitialSuccessfulRead
         let task = Task {
             let response = try await connectedClient.fetchRateLimits()
+            let initialSnapshot = try Self.makeSnapshot(from: response)
+            let snapshot: UsageSnapshot
+            if shouldConfirmInitialRead,
+                initialSnapshot.remainingFraction >= Self.effectivelyFullRemainingFraction
+            {
+                snapshot = try await Self.confirmInitialFullSnapshot(
+                    initialSnapshot,
+                    using: connectedClient
+                )
+            } else {
+                snapshot = initialSnapshot
+            }
             return ReadResult(
                 id: operationID,
-                snapshot: try Self.makeSnapshot(from: response)
+                snapshot: snapshot
             )
         }
         readOperation = ReadOperation(id: operationID, task: task)
@@ -354,11 +375,40 @@ final actor CodexUsageProvider: UsageFetching {
         do {
             let result = try await task.value
             if readOperation?.id == operationID { readOperation = nil }
+            hasCompletedInitialSuccessfulRead = true
             return result
         } catch {
             if readOperation?.id == operationID { readOperation = nil }
             throw error
         }
+    }
+
+    nonisolated private static func confirmInitialFullSnapshot(
+        _ initialSnapshot: UsageSnapshot,
+        using client: any CodexAppServerServing
+    ) async throws -> UsageSnapshot {
+        var selectedSnapshot = initialSnapshot
+
+        for _ in 0..<initialConfirmationReadCount {
+            do {
+                try Task.checkCancellation()
+                let response = try await client.fetchRateLimits()
+                let candidate = try makeSnapshot(from: response)
+                if candidate.resetAt > selectedSnapshot.resetAt
+                    || (candidate.resetAt == selectedSnapshot.resetAt
+                        && candidate.fetchedAt > selectedSnapshot.fetchedAt)
+                {
+                    selectedSnapshot = candidate
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                // Confirmation is best-effort. The first valid snapshot remains usable.
+                continue
+            }
+        }
+
+        return selectedSnapshot
     }
 
     private func ensureConnected() async throws -> any CodexAppServerServing {
@@ -564,13 +614,23 @@ final actor CodexUsageProvider: UsageFetching {
         from response: CodexRateLimitsResponse,
         fetchedAt: Date = .now
     ) throws -> UsageSnapshot {
-        var snapshots: [CodexRateLimitsResponse.RateLimitSnapshot] = []
-        if let namedSnapshot = response.rateLimitsByLimitId?["codex"] {
-            snapshots.append(namedSnapshot)
+        let selectedRateLimits: CodexRateLimitsResponse.RateLimitSnapshot
+        if let rateLimitsByLimitId = response.rateLimitsByLimitId,
+            !rateLimitsByLimitId.isEmpty
+        {
+            if let codexRateLimits = rateLimitsByLimitId["codex"] {
+                selectedRateLimits = codexRateLimits
+            } else if response.rateLimits.limitId == "codex" {
+                selectedRateLimits = response.rateLimits
+            } else {
+                throw UsageServiceError.currentWindowUnavailable("Codex")
+            }
+        } else {
+            // Older app-server responses expose only this top-level snapshot.
+            selectedRateLimits = response.rateLimits
         }
-        snapshots.append(response.rateLimits)
 
-        let windows = snapshots.flatMap(\.windows)
+        let windows = selectedRateLimits.windows
         guard let fiveHourWindow = windows.first(where: {
             $0.windowDurationMins == 300
         }),

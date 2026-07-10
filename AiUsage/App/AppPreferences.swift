@@ -53,9 +53,16 @@ final class AppPreferences {
         refreshInterval = defaults.string(forKey: Keys.refreshInterval)
             .flatMap(UsageRefreshInterval.init(rawValue:))
             ?? .threeMinutes
-        claudeUsageMode = defaults.string(forKey: Keys.claudeUsageMode)
+        let storedClaudeUsageMode = defaults.string(forKey: Keys.claudeUsageMode)
+        claudeUsageMode = storedClaudeUsageMode
             .flatMap(ClaudeUsageMode.init(rawValue:))
             ?? .statusLine
+        if storedClaudeUsageMode == "cliUsage" {
+            defaults.set(
+                ClaudeUsageMode.statusLine.rawValue,
+                forKey: Keys.claudeUsageMode
+            )
+        }
     }
 
     var enabledProviders: Set<UsageProvider> {
