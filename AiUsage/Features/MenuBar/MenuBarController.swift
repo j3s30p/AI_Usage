@@ -85,7 +85,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
                 logoSourceInsetFraction: provider.logoSourceInsetFraction,
                 remainingFraction: snapshot?.remainingFraction,
                 percentageText: preferences.showPercentage
-                    ? snapshot.map { "\($0.remainingPercentage)%" } ?? "–%"
+                    ? snapshot.map { "\($0.remainingPercentage)%" }
                     : nil
             )
         }

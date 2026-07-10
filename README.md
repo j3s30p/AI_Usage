@@ -13,6 +13,8 @@ Codex · [도넛 링] 23% │ Claude · [도넛 링] 48%
 - 0%가 되면 원형 링에만 빨간 1° 호를 남깁니다.
 - Codex와 Claude, 이름과 공식 로고, 퍼센트 표시를 각각 설정할 수 있습니다.
 - 기본 3분마다 갱신하며 1·3·5·15·30분 중 선택할 수 있습니다.
+- 사용량을 확인할 수 없거나 값이 오래되면 연결 끊김 기호를 표시하고 임의 퍼센트는 숨깁니다.
+- 설정에서 로그인 시 AiUsage 자동 실행을 켜거나 끌 수 있습니다.
 
 ## 설치
 
@@ -21,13 +23,9 @@ brew install --cask j3s30p/tap/aiusage
 open -a AiUsage
 ```
 
-현재 `0.1.1`은 Developer ID 서명과 Apple 공증 전의 프리뷰입니다. macOS가 첫 실행을 막으면
-앱 실행을 한 번 시도한 뒤 `시스템 설정 → 개인정보 보호 및 보안 → 확인 없이 열기`를 선택하세요.
-자세한 내용은 [Apple 안내](https://support.apple.com/guide/mac-help/open-a-mac-app-from-an-unknown-developer-mh40616/mac)를
-참고하세요.
-
-> 프리뷰 빌드에서는 `로그인 시 AiUsage 자동 실행`을 잠시 비활성화했습니다. Developer ID 서명과
-> 공증을 적용한 배포부터 다시 제공할 예정입니다.
+`v1.0.0`부터 Homebrew와 GitHub Release에 배포되는 앱은 Developer ID Application으로 서명하고
+Apple 공증 티켓을 포함합니다. 앱 설정의 `로그인 시 AiUsage 자동 실행`을 켜면 macOS 로그인
+항목으로 등록되며, 시스템 승인이 필요한 경우 설정 화면에서 로그인 항목 설정을 열 수 있습니다.
 
 ## 요구 사항
 
@@ -73,4 +71,5 @@ open build/DerivedData/Build/Products/Debug/AiUsage.app
 ## 문서
 
 - [기술 구조와 데이터 소스](docs/architecture.md)
+- [유지보수자 릴리스 절차](docs/releasing.md)
 - [브랜드 자산과 출처](BRAND_ASSETS.md)

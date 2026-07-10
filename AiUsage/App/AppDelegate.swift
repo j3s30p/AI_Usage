@@ -6,6 +6,7 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel(repository: UsageRepository())
     let preferences = AppPreferences()
+    let launchAtLoginController = LaunchAtLoginController()
     let statusLineSettingsModel = ClaudeStatusLineSettingsModel()
 
     private var menuBarController: MenuBarController?
@@ -30,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidBecomeActive(_ notification: Notification) {
+        launchAtLoginController.refresh()
         Task {
             await statusLineSettingsModel.refresh()
         }
