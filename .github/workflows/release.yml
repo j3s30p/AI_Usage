@@ -92,16 +92,15 @@ jobs:
           echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
           echo "checksum=$artifact.sha256" >> "$GITHUB_OUTPUT"
 
-      - name: Publish unsigned preview
+      - name: Publish unsigned release
         env:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.package.outputs.artifact }}
           CHECKSUM: ${{ steps.package.outputs.checksum }}
         run: |
           gh release create "$GITHUB_REF_NAME" "$ARTIFACT" "$CHECKSUM" \
-            --prerelease \
             --generate-notes \
-            --latest=false \
+            --latest \
             --notes "Unsigned preview: after the first blocked launch, macOS may require System Settings → Privacy & Security → Open Anyway. Gatekeeper is not bypassed." \
             --verify-tag \
             --title "AiUsage $GITHUB_REF_NAME (unsigned preview)"
