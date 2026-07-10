@@ -15,6 +15,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.showClaude)
         XCTAssertTrue(preferences.showPercentage)
         XCTAssertEqual(preferences.providerDisplayMode, .name)
+        XCTAssertEqual(preferences.refreshInterval, .threeMinutes)
         XCTAssertEqual(preferences.enabledProviders, Set(UsageProvider.allCases))
     }
 
@@ -28,12 +29,22 @@ final class AppPreferencesTests: XCTestCase {
         preferences.showClaude = true
         preferences.showPercentage = false
         preferences.providerDisplayMode = .logo
+        preferences.refreshInterval = .fifteenMinutes
 
         let reloaded = AppPreferences(defaults: defaults)
         XCTAssertFalse(reloaded.showCodex)
         XCTAssertTrue(reloaded.showClaude)
         XCTAssertFalse(reloaded.showPercentage)
         XCTAssertEqual(reloaded.providerDisplayMode, .logo)
+        XCTAssertEqual(reloaded.refreshInterval, .fifteenMinutes)
         XCTAssertEqual(reloaded.enabledProviders, [.claude])
+    }
+
+    func testRefreshIntervalsExposeExpectedDurations() {
+        XCTAssertEqual(UsageRefreshInterval.allCases.map(\.seconds), [60, 180, 300, 900, 1_800])
+        XCTAssertEqual(
+            UsageRefreshInterval.allCases.map(\.maximumExpectedSnapshotAge),
+            [900, 900, 900, 1_020, 1_920]
+        )
     }
 }

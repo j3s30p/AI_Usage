@@ -20,6 +20,18 @@ struct SettingsView: View {
                 .pickerStyle(.segmented)
             }
 
+            Section("사용량 갱신") {
+                Picker("자동 갱신 주기", selection: $preferences.refreshInterval) {
+                    ForEach(UsageRefreshInterval.allCases) { interval in
+                        Text(interval.displayName).tag(interval)
+                    }
+                }
+
+                Text("Claude는 OAuth, CLI, statusLine 순으로 조회합니다. 자동 갱신은 키체인 창을 띄우지 않으며 OAuth를 조용히 읽을 수 없으면 CLI로 넘어갑니다.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             if preferences.enabledProviders.isEmpty {
                 Label(
                     "두 서비스를 모두 끄면 메뉴바에는 AiUsage 아이콘만 표시됩니다.",

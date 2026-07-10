@@ -20,6 +20,10 @@ final class AppPreferences {
         didSet { defaults.set(providerDisplayMode.rawValue, forKey: Keys.providerDisplayMode) }
     }
 
+    var refreshInterval: UsageRefreshInterval {
+        didSet { defaults.set(refreshInterval.rawValue, forKey: Keys.refreshInterval) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -42,6 +46,9 @@ final class AppPreferences {
         providerDisplayMode = defaults.string(forKey: Keys.providerDisplayMode)
             .flatMap(ProviderDisplayMode.init(rawValue:))
             ?? .name
+        refreshInterval = defaults.string(forKey: Keys.refreshInterval)
+            .flatMap(UsageRefreshInterval.init(rawValue:))
+            ?? .threeMinutes
     }
 
     var enabledProviders: Set<UsageProvider> {
@@ -65,5 +72,6 @@ final class AppPreferences {
         static let showClaude = "showClaude"
         static let showPercentage = "showPercentage"
         static let providerDisplayMode = "providerDisplayMode"
+        static let refreshInterval = "refreshInterval"
     }
 }

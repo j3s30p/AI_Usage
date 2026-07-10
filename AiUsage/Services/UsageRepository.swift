@@ -37,6 +37,44 @@ struct UsageRepository: UsageRepositoryProtocol, Sendable {
         }
     }
 
+    func updates(
+        for providers: Set<UsageProvider>,
+        refreshInterval: Duration
+    ) -> AsyncStream<ProviderUsageUpdate> {
+        guard providers.contains(.codex) else {
+            return AsyncStream { continuation in
+                continuation.finish()
+            }
+        }
+
+        return AsyncStream { continuation in
+            let forwardingTask = Task {
+                for await result in codexProvider.updates(
+                    refreshInterval: refreshInterval
+                ) {
+                    guard !Task.isCancelled else { break }
+                    continuation.yield(
+                        ProviderUsageUpdate(provider: .codex, result: result)
+                    )
+                }
+                continuation.finish()
+            }
+
+            continuation.onTermination = { _ in
+                forwardingTask.cancel()
+            }
+        }
+    }
+
+    func stopMonitoring(providers: Set<UsageProvider>) {
+        guard providers.contains(.codex) else { return }
+        codexProvider.stopMonitoring()
+    }
+
+    func shutdown() {
+        codexProvider.shutdown()
+    }
+
     private func fetch(_ provider: UsageProvider) async throws -> UsageSnapshot {
         switch provider {
         case .codex:

@@ -26,4 +26,17 @@ final class LiveUsageSmokeTests: XCTestCase {
         XCTAssertTrue((0...1).contains(snapshot.remainingFraction))
         XCTAssertGreaterThan(snapshot.resetAt, Date().addingTimeInterval(-300))
     }
+
+    func testLiveClaudeCLIProbeWhenRequested() async throws {
+        guard ProcessInfo.processInfo.environment["AIUSAGE_LIVE_TESTS"] == "1" else {
+            throw XCTSkip("Set AIUSAGE_LIVE_TESTS=1 to run local account smoke tests.")
+        }
+
+        let response = try await ClaudeCLIUsageProbe().fetchUsage()
+        let snapshot = try ClaudeUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertEqual(snapshot.provider, .claude)
+        XCTAssertTrue((0...1).contains(snapshot.remainingFraction))
+        XCTAssertGreaterThan(snapshot.resetAt, Date())
+    }
 }

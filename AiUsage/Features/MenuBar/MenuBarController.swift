@@ -8,6 +8,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let alertOverlay: MenuBarAlertOverlayView
+    private var freshnessTask: Task<Void, Never>?
 
     init(model: AppModel, preferences: AppPreferences) {
         self.model = model
@@ -36,6 +37,21 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         }
 
         updateStatusItem()
+        freshnessTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: .seconds(30))
+                } catch {
+                    return
+                }
+                guard let self else { return }
+                updateStatusItem()
+            }
+        }
+    }
+
+    deinit {
+        freshnessTask?.cancel()
     }
 
     func updateStatusItem() {
@@ -87,8 +103,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             if let failure = state.failure {
                 return "\(provider.displayName), \(failure.message)"
             }
-            if provider == .claude, state.snapshot != nil {
-                return "Claude, 마지막 사용량이 오래되어 Claude Code 갱신 필요"
+            if state.snapshot != nil {
+                return "\(provider.displayName), 마지막 사용량 업데이트 지연"
             }
             return "\(provider.displayName), 사용량을 불러오는 중"
         }.joined(separator: ", ")
@@ -101,10 +117,9 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         at date: Date
     ) -> UsageSnapshot? {
         guard let snapshot = model.state(for: provider).snapshot else { return nil }
-        guard provider == .claude else { return snapshot }
         return snapshot.isCurrent(
             at: date,
-            maximumAge: ClaudeUsageProvider.cacheMaximumAge
+            maximumAge: preferences.refreshInterval.maximumExpectedSnapshotAge
         ) ? snapshot : nil
     }
 
