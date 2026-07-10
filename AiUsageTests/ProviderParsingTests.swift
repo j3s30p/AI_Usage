@@ -116,6 +116,146 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.fetchedAt.timeIntervalSince1970, 200)
     }
 
+    func testClaudeOAuthSourceWinsWithoutInvokingCLI() async throws {
+        let now = Date(timeIntervalSince1970: 1_000)
+        let cliCalls = ClaudeProviderCallCounter()
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            oauthFetcher: {
+                ClaudeOAuthUsageResponse(
+                    fiveHour: .init(
+                        utilization: 25,
+                        resetsAt: now.addingTimeInterval(3_600)
+                    ),
+                    sevenDay: .init(
+                        utilization: 40,
+                        resetsAt: now.addingTimeInterval(86_400)
+                    )
+                )
+            },
+            cliFetcher: {
+                cliCalls.increment()
+                throw InjectedClaudeProviderError("CLI should not run")
+            },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 75)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 60)
+        XCTAssertEqual(snapshot.fetchedAt, now)
+        XCTAssertEqual(cliCalls.value, 0)
+    }
+
+    func testClaudeOAuthFailureFallsBackToCLI() async throws {
+        let now = Date(timeIntervalSince1970: 0)
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            oauthFetcher: {
+                throw InjectedClaudeProviderError("OAuth unavailable")
+            },
+            cliFetcher: {
+                ClaudeCLIUsageSnapshot(
+                    sessionUsedPercentage: 12.5,
+                    sessionResetDescription: "Resets 3am (UTC)",
+                    weeklyUsedPercentage: 45,
+                    weeklyResetDescription: "Resets Jan 2 at 2am (UTC)"
+                )
+            },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingFraction, 0.875, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 10_800)
+        XCTAssertEqual(snapshot.weekly?.remainingFraction ?? -1, 0.55, accuracy: 0.0001)
+        XCTAssertEqual(snapshot.weekly?.resetAt.timeIntervalSince1970, 93_600)
+        XCTAssertEqual(snapshot.fetchedAt, now)
+    }
+
+    func testClaudeOAuthRequiresFiveHourResetAndClampsUtilization() throws {
+        XCTAssertThrowsError(
+            try ClaudeUsageProvider.makeSnapshot(
+                from: ClaudeOAuthUsageResponse(
+                    fiveHour: .init(utilization: 10, resetsAt: nil),
+                    sevenDay: nil
+                )
+            )
+        ) { error in
+            guard case UsageServiceError.currentWindowUnavailable("Claude") = error else {
+                return XCTFail("Expected missing current-window reset error, got \(error)")
+            }
+        }
+
+        let now = Date(timeIntervalSince1970: 100)
+        let snapshot = try ClaudeUsageProvider.makeSnapshot(
+            from: ClaudeOAuthUsageResponse(
+                fiveHour: .init(
+                    utilization: 140,
+                    resetsAt: now.addingTimeInterval(1_000)
+                ),
+                sevenDay: .init(
+                    utilization: -20,
+                    resetsAt: now.addingTimeInterval(2_000)
+                )
+            ),
+            fetchedAt: now
+        )
+
+        XCTAssertEqual(snapshot.remainingPercentage, 0)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 100)
+    }
+
+    func testClaudeCancellationDoesNotFallThroughToCLIOrCache() async {
+        let cliCalls = ClaudeProviderCallCounter()
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            oauthFetcher: { throw CancellationError() },
+            cliFetcher: {
+                cliCalls.increment()
+                throw InjectedClaudeProviderError("CLI should not run")
+            }
+        )
+
+        do {
+            _ = try await provider.fetchUsage()
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {
+            XCTAssertEqual(cliCalls.value, 0)
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
+    }
+
+    func testClaudeAllSourceFailureIsUsefulAndDoesNotExposeSourceErrors() async {
+        let oauthSecret = "oauth-secret-value"
+        let cliSecret = "cli-secret-value"
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            oauthFetcher: { throw InjectedClaudeProviderError(oauthSecret) },
+            cliFetcher: { throw InjectedClaudeProviderError(cliSecret) }
+        )
+
+        do {
+            _ = try await provider.fetchUsage()
+            XCTFail("Expected all sources to fail.")
+        } catch let error as UsageServiceError {
+            guard case .allSourcesUnavailable("Claude") = error else {
+                return XCTFail("Expected aggregate Claude error, got \(error)")
+            }
+            let description = error.localizedDescription
+            XCTAssertTrue(description.contains("OAuth"))
+            XCTAssertTrue(description.contains("CLI"))
+            XCTAssertTrue(description.contains("statusLine"))
+            XCTAssertFalse(description.contains(oauthSecret))
+            XCTAssertFalse(description.contains(cliSecret))
+        } catch {
+            XCTFail("Expected UsageServiceError, got \(error)")
+        }
+    }
+
     func testClaudeClampsUnexpectedUtilization() throws {
         let response = ClaudeUsageResponse(
             rateLimits: .init(
@@ -211,7 +351,9 @@ final class ProviderParsingTests: XCTestCase {
         )
         try data.write(to: cacheURL, options: .atomic)
 
-        let snapshot = try await ClaudeUsageProvider(cacheURL: cacheURL).fetchUsage()
+        let snapshot = try await makeCacheOnlyClaudeProvider(
+            cacheURL: cacheURL
+        ).fetchUsage()
 
         XCTAssertEqual(snapshot.remainingFraction, 0.765, accuracy: 0.0001)
         XCTAssertEqual(snapshot.weekly?.remainingFraction ?? -1, 0.588, accuracy: 0.0001)
@@ -273,7 +415,8 @@ final class ProviderParsingTests: XCTestCase {
         )
         try stale.write(to: cacheURL, options: .atomic)
 
-        let staleSnapshot = try await ClaudeUsageProvider(cacheURL: cacheURL).fetchUsage()
+        let provider = makeCacheOnlyClaudeProvider(cacheURL: cacheURL)
+        let staleSnapshot = try await provider.fetchUsage()
         XCTAssertFalse(
             staleSnapshot.isCurrent(
                 at: Date(timeIntervalSince1970: now),
@@ -297,12 +440,51 @@ final class ProviderParsingTests: XCTestCase {
         )
         try expired.write(to: cacheURL, options: .atomic)
 
-        let expiredSnapshot = try await ClaudeUsageProvider(cacheURL: cacheURL).fetchUsage()
+        let expiredSnapshot = try await provider.fetchUsage()
         XCTAssertFalse(
             expiredSnapshot.isCurrent(
                 at: Date(timeIntervalSince1970: now),
                 maximumAge: ClaudeUsageProvider.cacheMaximumAge
             )
         )
+    }
+
+    private func makeCacheOnlyClaudeProvider(cacheURL: URL) -> ClaudeUsageProvider {
+        ClaudeUsageProvider(
+            cacheURL: cacheURL,
+            oauthFetcher: {
+                throw InjectedClaudeProviderError("OAuth intentionally unavailable")
+            },
+            cliFetcher: {
+                throw InjectedClaudeProviderError("CLI intentionally unavailable")
+            }
+        )
+    }
+}
+
+private struct InjectedClaudeProviderError: LocalizedError, Sendable {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var errorDescription: String? { message }
+}
+
+private final class ClaudeProviderCallCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return count
+    }
+
+    func increment() {
+        lock.lock()
+        count += 1
+        lock.unlock()
     }
 }

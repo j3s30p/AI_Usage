@@ -38,7 +38,9 @@ struct UsagePopoverView: View {
                         ForEach(providers) { provider in
                             ProviderUsageRow(
                                 provider: provider,
-                                state: model.state(for: provider)
+                                state: model.state(for: provider),
+                                maximumSnapshotAge: preferences.refreshInterval
+                                    .maximumExpectedSnapshotAge
                             )
                         }
                     }

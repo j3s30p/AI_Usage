@@ -3,6 +3,7 @@ import SwiftUI
 struct ProviderUsageRow: View {
     let provider: UsageProvider
     let state: ProviderLoadState
+    let maximumSnapshotAge: TimeInterval
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -10,14 +11,14 @@ struct ProviderUsageRow: View {
                 Text(provider.displayName)
                     .font(.headline)
 
-                if provider == .claude, let snapshot = state.snapshot {
+                if let snapshot = state.snapshot {
                     let isStale = !snapshot.isCurrent(
                         at: .now,
-                        maximumAge: ClaudeUsageProvider.cacheMaximumAge
+                        maximumAge: maximumSnapshotAge
                     )
                     HStack(spacing: 3) {
                         if isStale {
-                            Text("오래된 캐시 ·")
+                            Text("업데이트 지연 ·")
                         }
                         Text(snapshot.fetchedAt, style: .relative)
                         Text("기준")
@@ -30,7 +31,7 @@ struct ProviderUsageRow: View {
                     )
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
-                        "Claude 사용량 \(isStale ? "오래된 캐시, " : "")\(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened)) 기준"
+                        "\(provider.displayName) 사용량 \(isStale ? "업데이트 지연, " : "")\(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened)) 기준"
                     )
                 }
 

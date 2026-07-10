@@ -49,7 +49,11 @@ final class AppModel {
                 let previous = state(for: provider).snapshot
                 switch result {
                 case .success(let snapshot):
-                    states[provider] = .loaded(snapshot)
+                    if let previous, snapshot.fetchedAt < previous.fetchedAt {
+                        states[provider] = .loaded(previous)
+                    } else {
+                        states[provider] = .loaded(snapshot)
+                    }
                 case .failure(let failure):
                     states[provider] = .failed(failure, previous: previous)
                 case nil:
@@ -66,16 +70,68 @@ final class AppModel {
         isRefreshing = activeRefreshCount > 0
     }
 
-    func monitor(providers: Set<UsageProvider>) async {
+    func monitor(
+        providers: Set<UsageProvider>,
+        refreshInterval: Duration = .seconds(180)
+    ) async {
         guard !providers.isEmpty else { return }
 
-        while !Task.isCancelled {
-            await refresh(providers: providers)
-            do {
-                try await Task.sleep(for: .seconds(300))
-            } catch {
+        let periodicallyFetchedProviders = providers.subtracting([.codex])
+        await withTaskGroup(of: Void.self) { group in
+            if !periodicallyFetchedProviders.isEmpty {
+                group.addTask { [weak self] in
+                    guard let self else { return }
+                    await self.refresh(providers: periodicallyFetchedProviders)
+
+                    while !Task.isCancelled {
+                        do {
+                            try await Task.sleep(for: refreshInterval)
+                        } catch {
+                            return
+                        }
+
+                        guard !Task.isCancelled else { return }
+                        await self.refresh(providers: periodicallyFetchedProviders)
+                    }
+                }
+            }
+
+            if providers.contains(.codex) {
+                group.addTask { [weak self, repository] in
+                    let updates = repository.updates(
+                        for: [.codex],
+                        refreshInterval: refreshInterval
+                    )
+                    for await update in updates {
+                        guard !Task.isCancelled, let self else { return }
+                        await self.apply(update)
+                    }
+                }
+            }
+
+            await group.waitForAll()
+        }
+    }
+
+    func stopMonitoring(providers: Set<UsageProvider>) {
+        repository.stopMonitoring(providers: providers)
+    }
+
+    func shutdown() {
+        repository.shutdown()
+    }
+
+    private func apply(_ update: ProviderUsageUpdate) {
+        let previous = state(for: update.provider).snapshot
+        switch update.result {
+        case .success(let snapshot):
+            if let previous, snapshot.fetchedAt < previous.fetchedAt {
                 return
             }
+            states[update.provider] = .loaded(snapshot)
+        case .failure(let failure):
+            states[update.provider] = .failed(failure, previous: previous)
         }
+        lastRefreshAt = .now
     }
 }
