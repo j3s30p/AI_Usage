@@ -24,6 +24,10 @@ final class AppPreferences {
         didSet { defaults.set(refreshInterval.rawValue, forKey: Keys.refreshInterval) }
     }
 
+    var claudeUsageMode: ClaudeUsageMode {
+        didSet { defaults.set(claudeUsageMode.rawValue, forKey: Keys.claudeUsageMode) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -49,6 +53,9 @@ final class AppPreferences {
         refreshInterval = defaults.string(forKey: Keys.refreshInterval)
             .flatMap(UsageRefreshInterval.init(rawValue:))
             ?? .threeMinutes
+        claudeUsageMode = defaults.string(forKey: Keys.claudeUsageMode)
+            .flatMap(ClaudeUsageMode.init(rawValue:))
+            ?? .statusLine
     }
 
     var enabledProviders: Set<UsageProvider> {
@@ -73,5 +80,6 @@ final class AppPreferences {
         static let showPercentage = "showPercentage"
         static let providerDisplayMode = "providerDisplayMode"
         static let refreshInterval = "refreshInterval"
+        static let claudeUsageMode = "claudeUsageMode"
     }
 }

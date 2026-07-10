@@ -5,6 +5,11 @@ protocol UsageRepositoryProtocol: Sendable {
         for providers: Set<UsageProvider>
     ) async -> [UsageProvider: ProviderUsageResult]
 
+    func fetchUsage(
+        for providers: Set<UsageProvider>,
+        claudeUsageMode: ClaudeUsageMode
+    ) async -> [UsageProvider: ProviderUsageResult]
+
     func updates(
         for providers: Set<UsageProvider>,
         refreshInterval: Duration
@@ -15,6 +20,13 @@ protocol UsageRepositoryProtocol: Sendable {
 }
 
 extension UsageRepositoryProtocol {
+    func fetchUsage(
+        for providers: Set<UsageProvider>,
+        claudeUsageMode: ClaudeUsageMode
+    ) async -> [UsageProvider: ProviderUsageResult] {
+        await fetchUsage(for: providers)
+    }
+
     func updates(
         for providers: Set<UsageProvider>,
         refreshInterval: Duration

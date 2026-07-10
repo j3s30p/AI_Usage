@@ -203,14 +203,14 @@ final actor CodexUsageProvider: UsageFetching {
     }
 
     nonisolated func shutdown() {
-        lifecycle.shutdown()
+        _ = lifecycle.shutdown()
         Task { [weak self] in
             await self?.shutdownIsolated()
         }
     }
 
     deinit {
-        lifecycle.shutdown()
+        _ = lifecycle.shutdown()
         monitorTask?.cancel()
         monitorSleep?.task.cancel()
         notificationTask?.cancel()

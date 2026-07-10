@@ -50,6 +50,75 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.state(for: .claude).snapshot, current)
     }
 
+    func testChangingClaudeModeAcceptsOlderSnapshotFromNewSource() async {
+        let now = Date(timeIntervalSince1970: 17_000)
+        let oauthSnapshot = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.42,
+            fetchedAt: now
+        )
+        let olderStatusLineSnapshot = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.83,
+            fetchedAt: now.addingTimeInterval(-600)
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.claude: .success(oauthSnapshot)],
+            [.claude: .success(olderStatusLineSnapshot)],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.claude], claudeUsageMode: .oauth)
+        await model.refresh(providers: [.claude], claudeUsageMode: .statusLine)
+
+        XCTAssertEqual(
+            model.state(for: .claude).snapshot,
+            olderStatusLineSnapshot
+        )
+    }
+
+    func testChangingClaudeModeDoesNotRetainPreviousSourceAfterFailure() async {
+        let now = Date(timeIntervalSince1970: 18_000)
+        let oauthSnapshot = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.42,
+            fetchedAt: now
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.claude: .success(oauthSnapshot)],
+            [.claude: .failure(UsageFailure(message: "statusLine 캐시 없음"))],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.claude], claudeUsageMode: .oauth)
+        await model.refresh(providers: [.claude], claudeUsageMode: .statusLine)
+
+        XCTAssertNil(model.state(for: .claude).snapshot)
+        XCTAssertEqual(
+            model.state(for: .claude).failure?.message,
+            "statusLine 캐시 없음"
+        )
+    }
+
+    func testSelectingNewClaudeModeClearsPreviousSourceImmediately() async {
+        let now = Date(timeIntervalSince1970: 19_000)
+        let oauthSnapshot = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.42,
+            fetchedAt: now
+        )
+        let repository = SequencedUsageRepository(responses: [
+            [.claude: .success(oauthSnapshot)],
+        ])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(providers: [.claude], claudeUsageMode: .oauth)
+        model.selectClaudeUsageMode(.statusLine)
+
+        XCTAssertNil(model.state(for: .claude).snapshot)
+        XCTAssertNil(model.state(for: .claude).failure)
+    }
+
     func testRefreshPublishesFastProviderWithoutWaitingForSlowProvider() async {
         let now = Date(timeIntervalSince1970: 20_000)
         let codex = UsageSnapshot(
@@ -81,6 +150,18 @@ final class AppModelTests: XCTestCase {
         await gate.open()
         await refreshTask.value
         XCTAssertEqual(model.state(for: .claude).snapshot, claude)
+    }
+
+    func testRefreshForwardsSelectedClaudeUsageMode() async {
+        let repository = StreamingUsageRepository(responses: [])
+        let model = AppModel(repository: repository)
+
+        await model.refresh(
+            providers: [.claude],
+            claudeUsageMode: .oauth
+        )
+
+        XCTAssertEqual(repository.claudeUsageModes, [.oauth])
     }
 
     func testMonitorAppliesCodexPushWithoutMarkingRefreshInProgress() async {
@@ -231,6 +312,27 @@ final class AppModelTests: XCTestCase {
         await monitorTask.value
     }
 
+    func testMonitorForwardsSelectedClaudeUsageMode() async {
+        let repository = StreamingUsageRepository(responses: [])
+        let model = AppModel(repository: repository)
+        let monitorTask = Task {
+            await model.monitor(
+                providers: [.claude],
+                refreshInterval: .seconds(60),
+                claudeUsageMode: .cliUsage
+            )
+        }
+
+        let receivedInitialFetch = await waitUntil {
+            repository.fetchCount == 1
+        }
+        XCTAssertTrue(receivedInitialFetch)
+        XCTAssertEqual(repository.claudeUsageModes, [.cliUsage])
+
+        monitorTask.cancel()
+        await monitorTask.value
+    }
+
     func testModelForwardsStopAndShutdownToRepository() {
         let repository = StreamingUsageRepository(responses: [])
         let model = AppModel(repository: repository)
@@ -300,6 +402,7 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
     private let lock = NSLock()
     private var responses: [[UsageProvider: ProviderUsageResult]]
     private var storedFetchCount = 0
+    private var storedClaudeUsageModes: [ClaudeUsageMode] = []
     private var storedStoppedProviders: Set<UsageProvider> = []
     private var storedDidShutdown = false
     private var storedLastUpdateRefreshInterval: Duration?
@@ -321,6 +424,10 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
         lock.withLock { storedStoppedProviders }
     }
 
+    var claudeUsageModes: [ClaudeUsageMode] {
+        lock.withLock { storedClaudeUsageModes }
+    }
+
     var didShutdown: Bool {
         lock.withLock { storedDidShutdown }
     }
@@ -332,6 +439,22 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
     func fetchUsage(
         for providers: Set<UsageProvider>
     ) async -> [UsageProvider: ProviderUsageResult] {
+        dequeueResponse(for: providers)
+    }
+
+    func fetchUsage(
+        for providers: Set<UsageProvider>,
+        claudeUsageMode: ClaudeUsageMode
+    ) async -> [UsageProvider: ProviderUsageResult] {
+        lock.withLock {
+            storedClaudeUsageModes.append(claudeUsageMode)
+        }
+        return dequeueResponse(for: providers)
+    }
+
+    private func dequeueResponse(
+        for providers: Set<UsageProvider>
+    ) -> [UsageProvider: ProviderUsageResult] {
         lock.withLock {
             storedFetchCount += 1
             guard !responses.isEmpty else { return [:] }

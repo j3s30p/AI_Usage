@@ -11,6 +11,7 @@ final class AppModel {
     @ObservationIgnored private let repository: any UsageRepositoryProtocol
     @ObservationIgnored private var refreshGeneration = 0
     @ObservationIgnored private var activeRefreshCount = 0
+    @ObservationIgnored private var activeClaudeUsageMode: ClaudeUsageMode?
 
     init(repository: any UsageRepositoryProtocol) {
         self.repository = repository
@@ -23,8 +24,26 @@ final class AppModel {
         states[provider] ?? .idle
     }
 
-    func refresh(providers: Set<UsageProvider>) async {
+    func selectClaudeUsageMode(_ mode: ClaudeUsageMode) {
+        guard activeClaudeUsageMode != mode else { return }
+        if activeClaudeUsageMode != nil {
+            states[.claude] = .idle
+            refreshGeneration += 1
+        }
+        activeClaudeUsageMode = mode
+    }
+
+    func refresh(
+        providers: Set<UsageProvider>,
+        claudeUsageMode: ClaudeUsageMode = .statusLine
+    ) async {
         guard !providers.isEmpty else { return }
+
+        if providers.contains(.claude) {
+            // A newer snapshot from another source must not mask the first
+            // result (or failure) from the newly selected Claude mode.
+            selectClaudeUsageMode(claudeUsageMode)
+        }
 
         refreshGeneration += 1
         let generation = refreshGeneration
@@ -38,7 +57,10 @@ final class AppModel {
         await withTaskGroup(of: (UsageProvider, ProviderUsageResult?).self) { group in
             for provider in providers {
                 group.addTask { [repository] in
-                    let results = await repository.fetchUsage(for: [provider])
+                    let results = await repository.fetchUsage(
+                        for: [provider],
+                        claudeUsageMode: claudeUsageMode
+                    )
                     return (provider, results[provider])
                 }
             }
@@ -72,7 +94,8 @@ final class AppModel {
 
     func monitor(
         providers: Set<UsageProvider>,
-        refreshInterval: Duration = .seconds(180)
+        refreshInterval: Duration = .seconds(180),
+        claudeUsageMode: ClaudeUsageMode = .statusLine
     ) async {
         guard !providers.isEmpty else { return }
 
@@ -81,7 +104,10 @@ final class AppModel {
             if !periodicallyFetchedProviders.isEmpty {
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    await self.refresh(providers: periodicallyFetchedProviders)
+                    await self.refresh(
+                        providers: periodicallyFetchedProviders,
+                        claudeUsageMode: claudeUsageMode
+                    )
 
                     while !Task.isCancelled {
                         do {
@@ -91,7 +117,10 @@ final class AppModel {
                         }
 
                         guard !Task.isCancelled else { return }
-                        await self.refresh(providers: periodicallyFetchedProviders)
+                        await self.refresh(
+                            providers: periodicallyFetchedProviders,
+                            claudeUsageMode: claudeUsageMode
+                        )
                     }
                 }
             }

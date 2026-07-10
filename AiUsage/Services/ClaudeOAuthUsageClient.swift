@@ -1,5 +1,4 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 struct ClaudeOAuthUsageResponse: Sendable, Equatable {
@@ -10,6 +9,89 @@ struct ClaudeOAuthUsageResponse: Sendable, Equatable {
 struct ClaudeOAuthUsageWindow: Sendable, Equatable {
     let utilization: Double
     let resetsAt: Date?
+}
+
+enum ClaudeOAuthUserInitiatedAccessResult: Sendable, Equatable {
+    case available
+    case notFound
+    case denied
+    case cancelled
+    case invalidCredentials
+    case expired
+    case unavailable
+}
+
+struct ClaudeOAuthKeychainReadResult: Sendable {
+    let status: OSStatus
+    let data: Data?
+}
+
+/// Explicit user-action boundary for the one Keychain path that may show macOS UI.
+/// Automatic refresh code must use `ClaudeOAuthCredentialLoader` instead.
+struct ClaudeOAuthUserInitiatedKeychainAccess: Sendable {
+    typealias KeychainReader = @Sendable () -> ClaudeOAuthKeychainReadResult
+
+    private let keychainReader: KeychainReader
+    private let now: @Sendable () -> Date
+
+    init(
+        keychainReader: @escaping KeychainReader = ClaudeOAuthUsageClient
+            .readKeychainCredentialDataAllowingUI,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
+        self.keychainReader = keychainReader
+        self.now = now
+    }
+
+    /// Call only in direct response to an explicit Connect/Allow button action.
+    /// The result never contains credential material, response bodies, or raw errors.
+    func requestAccessFromUserAction() async -> ClaudeOAuthUserInitiatedAccessResult {
+        guard !Task.isCancelled else { return .cancelled }
+        let keychainReader = keychainReader
+        let readResult = await Task.detached(priority: .userInitiated) {
+            keychainReader()
+        }.value
+        guard !Task.isCancelled else { return .cancelled }
+
+        switch readResult.status {
+        case errSecSuccess:
+            return inspectCredential(readResult.data)
+        case errSecItemNotFound:
+            return .notFound
+        case errSecUserCanceled:
+            return .cancelled
+        case errSecAuthFailed, errSecNoAccessForItem, errSecInteractionNotAllowed:
+            return .denied
+        default:
+            return .unavailable
+        }
+    }
+
+    private func inspectCredential(_ data: Data?) -> ClaudeOAuthUserInitiatedAccessResult {
+        guard let data, !data.isEmpty,
+              let root = try? JSONDecoder().decode(CredentialRoot.self, from: data),
+              let oauth = root.claudeAiOauth,
+              let accessToken = oauth.accessToken?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !accessToken.isEmpty,
+              let expiresAtMilliseconds = oauth.expiresAt,
+              expiresAtMilliseconds.isFinite
+        else {
+            return .invalidCredentials
+        }
+
+        let expiresAt = Date(timeIntervalSince1970: expiresAtMilliseconds / 1_000)
+        return now() < expiresAt ? .available : .expired
+    }
+
+    private struct CredentialRoot: Decodable {
+        let claudeAiOauth: OAuthCredential?
+    }
+
+    private struct OAuthCredential: Decodable {
+        let accessToken: String?
+        let expiresAt: Double?
+    }
 }
 
 enum ClaudeOAuthUsageClientError: LocalizedError, Sendable, Equatable {
@@ -230,24 +312,43 @@ struct ClaudeOAuthUsageClient: Sendable {
         return formatter.date(from: value)
     }
 
-    static func readKeychainCredentialData() -> Data? {
+    fileprivate static func readKeychainCredentialData() -> Data? {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(keychainQuery as CFDictionary, &result)
         guard status == errSecSuccess else { return nil }
         return result as? Data
     }
 
+    fileprivate static func readKeychainCredentialDataAllowingUI() -> ClaudeOAuthKeychainReadResult {
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(
+            userInitiatedKeychainQuery as CFDictionary,
+            &result
+        )
+        return ClaudeOAuthKeychainReadResult(
+            status: status,
+            data: result as? Data
+        )
+    }
+
     static var keychainQuery: [CFString: Any] {
-        let authenticationContext = LAContext()
-        authenticationContext.interactionNotAllowed = true
-        return [
+        var query = baseKeychainQuery
+        ClaudeKeychainNoUIQuery.apply(to: &query)
+        return query
+    }
+
+    static var userInitiatedKeychainQuery: [CFString: Any] {
+        // Omitting authentication UI controls uses Security.framework's default
+        // allow policy. This query is only reachable through the explicit API above.
+        baseKeychainQuery
+    }
+
+    private static var baseKeychainQuery: [CFString: Any] {
+        [
             kSecClass: kSecClassGenericPassword,
             kSecAttrService: keychainService,
             kSecReturnData: true,
             kSecMatchLimit: kSecMatchLimitOne,
-            // Automatic refresh must never interrupt the user with a Keychain dialog.
-            // If access is not already available, OAuth cleanly falls through to CLI/statusLine.
-            kSecUseAuthenticationContext: authenticationContext,
         ]
     }
 
