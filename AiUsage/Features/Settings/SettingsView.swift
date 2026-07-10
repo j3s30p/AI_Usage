@@ -1,41 +1,35 @@
-import Foundation
 import SwiftUI
 
 struct SettingsView: View {
-    typealias ClaudeKeychainConnectionAction = @MainActor @Sendable () async throws -> Void
+    typealias ClaudeOAuthAuthorizationAction =
+        @MainActor @Sendable () async -> ClaudeOAuthUserInitiatedAccessResult
 
     @Bindable var preferences: AppPreferences
-    private let onConnectClaudeKeychain: ClaudeKeychainConnectionAction
+    @Bindable var statusLineModel: ClaudeStatusLineSettingsModel
 
-    @State private var isConnectingClaudeKeychain = false
-    @State private var claudeKeychainConnectionMessage: String?
-    @State private var claudeKeychainConnectionSucceeded = false
+    private let onAuthorizeClaudeOAuth: ClaudeOAuthAuthorizationAction
 
-    init(preferences: AppPreferences) {
-        self.init(
-            preferences: preferences,
-            onConnectClaudeKeychain: {
-                throw NSError(
-                    domain: "AiUsage.ClaudeKeychainConnection",
-                    code: 1,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: "Keychain 연결 기능이 구성되지 않았습니다."
-                    ]
-                )
-            }
-        )
-    }
+    @State private var selectedClaudeUsageMode: ClaudeUsageMode
+    @State private var isAuthorizingClaudeOAuth = false
+    @State private var oauthFeedback: OAuthFeedback?
 
     init(
         preferences: AppPreferences,
-        onConnectClaudeKeychain: @escaping ClaudeKeychainConnectionAction
+        statusLineModel: ClaudeStatusLineSettingsModel,
+        onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction
     ) {
         self.preferences = preferences
-        self.onConnectClaudeKeychain = onConnectClaudeKeychain
+        self.statusLineModel = statusLineModel
+        self.onAuthorizeClaudeOAuth = onAuthorizeClaudeOAuth
+        _selectedClaudeUsageMode = State(
+            initialValue: preferences.claudeUsageMode
+        )
     }
 
     var body: some View {
         Form {
+            LaunchAtLoginSection()
+
             Section("메뉴바에 표시") {
                 Toggle("Codex", isOn: $preferences.showCodex)
                 Toggle("Claude", isOn: $preferences.showClaude)
@@ -59,19 +53,56 @@ struct SettingsView: View {
                 }
 
                 if preferences.showClaude {
-                    Picker("Claude 조회 방식", selection: $preferences.claudeUsageMode) {
-                        ForEach(ClaudeUsageMode.allCases) { mode in
-                            Text(mode.displayName).tag(mode)
+                    LabeledContent("Claude 조회 방식") {
+                        Menu {
+                            ForEach(ClaudeUsageMode.allCases) { mode in
+                                Button {
+                                    requestClaudeUsageMode(mode)
+                                } label: {
+                                    if selectedClaudeUsageMode == mode {
+                                        Label(
+                                            mode.displayName,
+                                            systemImage: "checkmark"
+                                        )
+                                    } else {
+                                        Text(mode.displayName)
+                                    }
+                                }
+                            }
+                        } label: {
+                            Text(selectedClaudeUsageMode.displayName)
                         }
+                        .disabled(isAuthorizingClaudeOAuth)
+                        .accessibilityLabel("Claude 조회 방식")
+                        .accessibilityValue(selectedClaudeUsageMode.displayName)
                     }
 
                     claudeUsageModeDescription
 
-                    if preferences.claudeUsageMode == .oauth {
-                        claudeKeychainConnectionControls
+                    if isAuthorizingClaudeOAuth {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                                .accessibilityHidden(true)
+                            Text("Claude OAuth 인증 확인 중…")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityElement(children: .combine)
+                    }
+
+                    if let oauthFeedback {
+                        Label(
+                            oauthFeedback.message,
+                            systemImage: oauthFeedback.symbol
+                        )
+                        .font(.caption)
+                        .foregroundStyle(oauthFeedback.color)
                     }
                 }
             }
+
+            ClaudeStatusLineConnectionSection(model: statusLineModel)
 
             if preferences.enabledProviders.isEmpty {
                 Label(
@@ -83,16 +114,19 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 380)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: 420, height: 640)
+        .onChange(of: preferences.claudeUsageMode) {
+            guard !isAuthorizingClaudeOAuth else { return }
+            selectedClaudeUsageMode = $1
+        }
     }
 
     @ViewBuilder
     private var claudeUsageModeDescription: some View {
-        switch preferences.claudeUsageMode {
+        switch selectedClaudeUsageMode {
         case .statusLine:
             Label(
-                "Claude Code가 남긴 statusLine 캐시만 읽습니다. Keychain에 접근하거나 로그인 절차를 시작하지 않으며, Claude Code를 사용한 뒤 캐시가 갱신됩니다.",
+                "Claude Code가 남긴 statusLine 캐시만 읽습니다. 아래 연결 버튼을 한 번 누르면 터미널이나 설정 파일 수정 없이 자동으로 구성됩니다.",
                 systemImage: "checkmark.shield"
             )
             .font(.caption)
@@ -100,81 +134,103 @@ struct SettingsView: View {
 
         case .oauth:
             Label(
-                "백그라운드에서는 승인 창 없이 OAuth 사용량을 조회하고, Keychain을 조용히 읽을 수 없거나 조회가 실패하면 statusLine 캐시로 넘어갑니다. 비공개 API라 중단될 수 있으며 ad-hoc 빌드는 서명이 바뀌면 승인을 다시 요구할 수 있습니다. 아래 버튼을 눌렀을 때만 Keychain 승인 창이 한 번 표시될 수 있습니다.",
+                "OAuth 모드를 선택하면 먼저 Claude Code 인증 파일을 확인하고, 사용할 수 없을 때만 Keychain 승인을 요청합니다. 이후 백그라운드 조회는 팝업 없이 실행하고, 실패하면 statusLine 캐시로 돌아갑니다. 비공개 API라 중단될 수 있습니다.",
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.caption)
             .foregroundStyle(.orange)
 
-        case .cliUsage:
-            Label(
-                "먼저 claude auth status로 로그인 상태를 확인합니다. 로그인되어 있을 때만 /usage를 실행하며 AiUsage가 자동 로그인이나 브라우저를 요청하지는 않습니다. 다만 외부 Claude CLI가 자체적으로 표시하는 Keychain 잠금 해제·승인 UI까지 AiUsage가 차단할 수는 없습니다. 조회가 실패하면 statusLine 캐시로 넘어갑니다.",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(.orange)
         }
     }
 
-    @ViewBuilder
-    private var claudeKeychainConnectionControls: some View {
-        Button {
-            connectClaudeKeychain()
-        } label: {
-            if isConnectingClaudeKeychain {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.small)
-                        .accessibilityHidden(true)
-                    Text("Keychain 연결 중…")
-                }
-            } else {
-                Label("Keychain 연결", systemImage: "key")
-            }
+    private func requestClaudeUsageMode(_ requestedMode: ClaudeUsageMode) {
+        guard requestedMode == .oauth else {
+            guard requestedMode != preferences.claudeUsageMode else { return }
+            selectedClaudeUsageMode = requestedMode
+            oauthFeedback = nil
+            preferences.claudeUsageMode = requestedMode
+            return
         }
-        .disabled(isConnectingClaudeKeychain)
-        .accessibilityLabel(
-            isConnectingClaudeKeychain
-                ? "Claude Keychain 연결 중"
-                : "Claude Keychain 연결"
-        )
-        .accessibilityHint(
-            "사용자가 누를 때 한 번만 macOS Keychain 접근 승인을 요청합니다."
-        )
+        guard !isAuthorizingClaudeOAuth else { return }
 
-        if let claudeKeychainConnectionMessage {
-            Label(
-                claudeKeychainConnectionMessage,
-                systemImage: claudeKeychainConnectionSucceeded
-                    ? "checkmark.circle.fill"
-                    : "xmark.circle.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(
-                claudeKeychainConnectionSucceeded ? .green : .red
-            )
-            .accessibilityLabel(
-                "Claude Keychain 연결 결과: \(claudeKeychainConnectionMessage)"
-            )
-        }
-    }
-
-    private func connectClaudeKeychain() {
-        guard !isConnectingClaudeKeychain else { return }
-        isConnectingClaudeKeychain = true
-        claudeKeychainConnectionMessage = nil
-        claudeKeychainConnectionSucceeded = false
+        selectedClaudeUsageMode = .oauth
+        isAuthorizingClaudeOAuth = true
+        oauthFeedback = nil
 
         Task { @MainActor in
-            defer { isConnectingClaudeKeychain = false }
-            do {
-                try await onConnectClaudeKeychain()
-                claudeKeychainConnectionSucceeded = true
-                claudeKeychainConnectionMessage = "Keychain 연결을 확인했습니다."
-            } catch {
-                claudeKeychainConnectionMessage =
-                    "Keychain 연결에 실패했습니다. Claude Code 로그인 상태와 앱 서명을 확인해 주세요."
+            let result = await onAuthorizeClaudeOAuth()
+            switch result {
+            case .available:
+                preferences.claudeUsageMode = .oauth
+                oauthFeedback = .success
+            case .cancelled:
+                selectedClaudeUsageMode = preferences.claudeUsageMode
+                oauthFeedback = .cancelled
+            default:
+                selectedClaudeUsageMode = preferences.claudeUsageMode
+                oauthFeedback = .failure(result.userFacingMessage)
             }
+            isAuthorizingClaudeOAuth = false
+        }
+    }
+}
+
+private enum OAuthFeedback {
+    case success
+    case cancelled
+    case failure(String)
+
+    var message: String {
+        switch self {
+        case .success:
+            "Claude OAuth 인증을 확인했습니다."
+        case .cancelled:
+            "OAuth 모드 선택을 취소했습니다."
+        case .failure(let message):
+            message
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .success:
+            "checkmark.circle.fill"
+        case .cancelled:
+            "minus.circle"
+        case .failure:
+            "xmark.circle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .success:
+            .green
+        case .cancelled:
+            .secondary
+        case .failure:
+            .red
+        }
+    }
+}
+
+private extension ClaudeOAuthUserInitiatedAccessResult {
+    var userFacingMessage: String {
+        switch self {
+        case .available:
+            "Claude OAuth 인증을 확인했습니다."
+        case .notFound:
+            "Claude OAuth 인증 정보를 파일 또는 Keychain에서 찾지 못했습니다."
+        case .denied:
+            "Claude Code Keychain 접근이 거부되었습니다."
+        case .cancelled:
+            "OAuth 모드 선택을 취소했습니다."
+        case .invalidCredentials:
+            "Claude OAuth 인증 정보를 확인할 수 없습니다."
+        case .expired:
+            "Claude OAuth 인증 정보가 만료되었습니다."
+        case .unavailable:
+            "Claude OAuth 인증 정보를 사용할 수 없습니다."
         }
     }
 }

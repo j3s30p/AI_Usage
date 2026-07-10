@@ -183,7 +183,9 @@ final class CodexAppServerClient: @unchecked Sendable {
                 "clientInfo": [
                     "name": "aiusage",
                     "title": "AiUsage",
-                    "version": "0.1.0",
+                    "version": Bundle.main.object(
+                        forInfoDictionaryKey: "CFBundleShortVersionString"
+                    ) as? String ?? "development",
                 ],
             ],
             timeout: requestTimeout
@@ -442,8 +444,19 @@ struct CodexRateLimitsResponse: Decodable, Sendable {
     let rateLimitsByLimitId: [String: RateLimitSnapshot]?
 
     struct RateLimitSnapshot: Decodable, Sendable {
+        let limitId: String?
         let primary: Window?
         let secondary: Window?
+
+        init(
+            limitId: String? = nil,
+            primary: Window?,
+            secondary: Window?
+        ) {
+            self.limitId = limitId
+            self.primary = primary
+            self.secondary = secondary
+        }
 
         var windows: [Window] {
             [primary, secondary].compactMap { $0 }

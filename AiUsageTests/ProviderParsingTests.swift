@@ -83,6 +83,192 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertNil(snapshot.weekly)
     }
 
+    func testCodexUsesNamedDefaultLimitInsteadOfTopLevelSparkLimit() throws {
+        let data = Data(
+            """
+            {
+              "rateLimits": {
+                "limitId": "codex_bengalfox",
+                "primary": {
+                  "usedPercent": 0,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1783664000
+                },
+                "secondary": {
+                  "usedPercent": 0,
+                  "windowDurationMins": 10080,
+                  "resetsAt": 1784250800
+                }
+              },
+              "rateLimitsByLimitId": {
+                "codex": {
+                  "limitId": "codex",
+                  "primary": {
+                    "usedPercent": 37,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1783664138
+                  },
+                  "secondary": {
+                    "usedPercent": 12,
+                    "windowDurationMins": 10080,
+                    "resetsAt": 1784250938
+                  }
+                },
+                "codex_bengalfox": {
+                  "limitId": "codex_bengalfox",
+                  "primary": {
+                    "usedPercent": 0,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1783664000
+                  },
+                  "secondary": null
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
+        let snapshot = try CodexUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertEqual(snapshot.remainingPercentage, 63)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 88)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_783_664_138)
+    }
+
+    func testCodexRejectsTopLevelSparkWhenNamedDefaultLimitIsTemporarilyMissing() throws {
+        let data = Data(
+            """
+            {
+              "rateLimits": {
+                "limitId": "codex_bengalfox",
+                "primary": {
+                  "usedPercent": 0,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1783664138
+                },
+                "secondary": {
+                  "usedPercent": 0,
+                  "windowDurationMins": 10080,
+                  "resetsAt": 1784250938
+                }
+              },
+              "rateLimitsByLimitId": {
+                "codex_bengalfox": {
+                  "limitId": "codex_bengalfox",
+                  "primary": {
+                    "usedPercent": 0,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1783664138
+                  },
+                  "secondary": null
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
+        XCTAssertEqual(response.rateLimits.limitId, "codex_bengalfox")
+
+        XCTAssertThrowsError(try CodexUsageProvider.makeSnapshot(from: response)) { error in
+            guard case UsageServiceError.currentWindowUnavailable("Codex") = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+        }
+    }
+
+    func testCodexUsesExplicitTopLevelDefaultWhenMultiLimitMapOmitsItsKey() throws {
+        let data = Data(
+            """
+            {
+              "rateLimits": {
+                "limitId": "codex",
+                "primary": {
+                  "usedPercent": 31,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1783664138
+                },
+                "secondary": null
+              },
+              "rateLimitsByLimitId": {
+                "codex_bengalfox": {
+                  "limitId": "codex_bengalfox",
+                  "primary": {
+                    "usedPercent": 0,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1783664000
+                  },
+                  "secondary": null
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
+        let snapshot = try CodexUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertEqual(snapshot.remainingPercentage, 69)
+    }
+
+    func testCodexKeepsTopLevelFallbackForEmptyLegacyLimitMap() throws {
+        let data = Data(
+            """
+            {
+              "rateLimits": {
+                "primary": {
+                  "usedPercent": 25,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1783664138
+                },
+                "secondary": null
+              },
+              "rateLimitsByLimitId": {}
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
+        let snapshot = try CodexUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertEqual(snapshot.remainingPercentage, 75)
+    }
+
+    func testCodexAllowsRealNamedDefaultLimitAtZeroPercentUsed() throws {
+        let data = Data(
+            """
+            {
+              "rateLimits": {
+                "limitId": "codex",
+                "primary": {
+                  "usedPercent": 0,
+                  "windowDurationMins": 300,
+                  "resetsAt": 1783664138
+                },
+                "secondary": null
+              },
+              "rateLimitsByLimitId": {
+                "codex": {
+                  "limitId": "codex",
+                  "primary": {
+                    "usedPercent": 0,
+                    "windowDurationMins": 300,
+                    "resetsAt": 1783664138
+                  },
+                  "secondary": null
+                }
+              }
+            }
+            """.utf8
+        )
+
+        let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
+        let snapshot = try CodexUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertEqual(snapshot.remainingPercentage, 100)
+    }
+
     func testClaudeParsesStatusLineFiveHourAndWeeklyWindows() throws {
         let data = Data(
             """
@@ -122,21 +308,11 @@ final class ProviderParsingTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: cache.directory) }
 
         let oauthCalls = ClaudeProviderCallCounter()
-        let authCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: cache.url,
             oauthFetcher: {
                 oauthCalls.increment()
                 throw InjectedClaudeProviderError("OAuth should not run")
-            },
-            cliAuthStatusFetcher: {
-                authCalls.increment()
-                return true
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
             }
         )
 
@@ -144,15 +320,11 @@ final class ProviderParsingTests: XCTestCase {
 
         XCTAssertEqual(snapshot.remainingPercentage, 75)
         XCTAssertEqual(oauthCalls.value, 0)
-        XCTAssertEqual(authCalls.value, 0)
-        XCTAssertEqual(cliCalls.value, 0)
     }
 
     func testClaudeOAuthModeUsesOnlyOAuthWhenAvailable() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let oauthCalls = ClaudeProviderCallCounter()
-        let authCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
             oauthFetcher: {
@@ -168,14 +340,6 @@ final class ProviderParsingTests: XCTestCase {
                     )
                 )
             },
-            cliAuthStatusFetcher: {
-                authCalls.increment()
-                return true
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
-            },
             now: { now }
         )
 
@@ -185,8 +349,6 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.weekly?.remainingPercentage, 60)
         XCTAssertEqual(snapshot.fetchedAt, now)
         XCTAssertEqual(oauthCalls.value, 1)
-        XCTAssertEqual(authCalls.value, 0)
-        XCTAssertEqual(cliCalls.value, 0)
     }
 
     func testClaudeOAuthModeFallsBackOnlyToStatusLine() async throws {
@@ -194,28 +356,16 @@ final class ProviderParsingTests: XCTestCase {
         let cache = try makeValidClaudeCache(capturedAt: now)
         defer { try? FileManager.default.removeItem(at: cache.directory) }
 
-        let authCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: cache.url,
             oauthFetcher: {
                 throw InjectedClaudeProviderError("OAuth unavailable")
-            },
-            cliAuthStatusFetcher: {
-                authCalls.increment()
-                return true
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
             }
         )
 
         let snapshot = try await provider.fetchUsage(mode: .oauth)
 
         XCTAssertEqual(snapshot.remainingPercentage, 75)
-        XCTAssertEqual(authCalls.value, 0)
-        XCTAssertEqual(cliCalls.value, 0)
     }
 
     func testClaudeOAuthRequiresFiveHourResetAndClampsUtilization() throws {
@@ -252,182 +402,26 @@ final class ProviderParsingTests: XCTestCase {
     }
 
     func testClaudeOAuthCancellationDoesNotFallThrough() async {
-        let authCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: { throw CancellationError() },
-            cliAuthStatusFetcher: {
-                authCalls.increment()
-                return true
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
-            }
+            oauthFetcher: { throw CancellationError() }
         )
 
         do {
             _ = try await provider.fetchUsage(mode: .oauth)
             XCTFail("Expected cancellation.")
         } catch is CancellationError {
-            XCTAssertEqual(authCalls.value, 0)
-            XCTAssertEqual(cliCalls.value, 0)
+            // Expected: cancellation must not be replaced by cache fallback.
         } catch {
             XCTFail("Expected CancellationError, got \(error)")
         }
     }
 
-    func testClaudeCLIModeRunsUsageOnlyAfterLoggedInCheck() async throws {
-        let now = Date(timeIntervalSince1970: 0)
-        let oauthCalls = ClaudeProviderCallCounter()
-        let authCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
-        let provider = ClaudeUsageProvider(
-            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: {
-                oauthCalls.increment()
-                throw InjectedClaudeProviderError("OAuth should not run")
-            },
-            cliAuthStatusFetcher: {
-                authCalls.increment()
-                return true
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                return ClaudeCLIUsageSnapshot(
-                    sessionUsedPercentage: 12.5,
-                    sessionResetDescription: "Resets 3am (UTC)",
-                    weeklyUsedPercentage: 45,
-                    weeklyResetDescription: "Resets Jan 2 at 2am (UTC)"
-                )
-            },
-            now: { now }
-        )
-
-        let snapshot = try await provider.fetchUsage(mode: .cliUsage)
-
-        XCTAssertEqual(snapshot.remainingFraction, 0.875, accuracy: 0.0001)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 10_800)
-        XCTAssertEqual(snapshot.weekly?.remainingFraction ?? -1, 0.55, accuracy: 0.0001)
-        XCTAssertEqual(oauthCalls.value, 0)
-        XCTAssertEqual(authCalls.value, 1)
-        XCTAssertEqual(cliCalls.value, 1)
-    }
-
-    func testClaudeCLILoggedOutSkipsUsageAndFallsBackToStatusLine() async throws {
-        let now = Date(timeIntervalSince1970: 1_000)
-        let cache = try makeValidClaudeCache(capturedAt: now)
-        defer { try? FileManager.default.removeItem(at: cache.directory) }
-
-        let oauthCalls = ClaudeProviderCallCounter()
-        let cliCalls = ClaudeProviderCallCounter()
-        let provider = ClaudeUsageProvider(
-            cacheURL: cache.url,
-            oauthFetcher: {
-                oauthCalls.increment()
-                throw InjectedClaudeProviderError("OAuth should not run")
-            },
-            cliAuthStatusFetcher: { false },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
-            }
-        )
-
-        let snapshot = try await provider.fetchUsage(mode: .cliUsage)
-
-        XCTAssertEqual(snapshot.remainingPercentage, 75)
-        XCTAssertEqual(oauthCalls.value, 0)
-        XCTAssertEqual(cliCalls.value, 0)
-    }
-
-    func testClaudeCLIAuthFailureFallsBackToStatusLineWithoutLaunchingUsage() async throws {
-        let now = Date(timeIntervalSince1970: 1_000)
-        let cache = try makeValidClaudeCache(capturedAt: now)
-        defer { try? FileManager.default.removeItem(at: cache.directory) }
-
-        let cliCalls = ClaudeProviderCallCounter()
-        let provider = ClaudeUsageProvider(
-            cacheURL: cache.url,
-            cliAuthStatusFetcher: {
-                throw InjectedClaudeProviderError("auth probe failed")
-            },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
-            }
-        )
-
-        let snapshot = try await provider.fetchUsage(mode: .cliUsage)
-
-        XCTAssertEqual(snapshot.remainingPercentage, 75)
-        XCTAssertEqual(cliCalls.value, 0)
-    }
-
-    func testClaudeCLIAuthCancellationDoesNotLaunchUsageOrFallBack() async {
-        let cliCalls = ClaudeProviderCallCounter()
-        let provider = ClaudeUsageProvider(
-            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            cliAuthStatusFetcher: { throw CancellationError() },
-            cliFetcher: {
-                cliCalls.increment()
-                throw InjectedClaudeProviderError("CLI should not run")
-            }
-        )
-
-        do {
-            _ = try await provider.fetchUsage(mode: .cliUsage)
-            XCTFail("Expected cancellation.")
-        } catch is CancellationError {
-            XCTAssertEqual(cliCalls.value, 0)
-        } catch {
-            XCTFail("Expected CancellationError, got \(error)")
-        }
-    }
-
-    func testClaudeCLIUsageCancellationDoesNotFallBack() async {
-        let provider = ClaudeUsageProvider(
-            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            cliAuthStatusFetcher: { true },
-            cliFetcher: { throw CancellationError() }
-        )
-
-        do {
-            _ = try await provider.fetchUsage(mode: .cliUsage)
-            XCTFail("Expected cancellation.")
-        } catch is CancellationError {
-            // Expected: a cancelled interactive probe must never be replaced by cache fallback.
-        } catch {
-            XCTFail("Expected CancellationError, got \(error)")
-        }
-    }
-
-    func testClaudeCLIFailureFallsBackToStatusLine() async throws {
-        let now = Date(timeIntervalSince1970: 1_000)
-        let cache = try makeValidClaudeCache(capturedAt: now)
-        defer { try? FileManager.default.removeItem(at: cache.directory) }
-
-        let provider = ClaudeUsageProvider(
-            cacheURL: cache.url,
-            cliAuthStatusFetcher: { true },
-            cliFetcher: {
-                throw InjectedClaudeProviderError("CLI unavailable")
-            }
-        )
-
-        let snapshot = try await provider.fetchUsage(mode: .cliUsage)
-        XCTAssertEqual(snapshot.remainingPercentage, 75)
-    }
-
-    func testClaudeModeFailureErrorsAreUsefulAndDoNotExposeSourceErrors() async {
+    func testClaudeOAuthFailureErrorIsUsefulAndDoesNotExposeSourceError() async {
         let oauthSecret = "oauth-secret-value"
-        let cliSecret = "cli-secret-value"
         let oauthProvider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: { throw InjectedClaudeProviderError(oauthSecret) },
-            cliAuthStatusFetcher: { true },
-            cliFetcher: { throw InjectedClaudeProviderError("CLI should not run") }
+            oauthFetcher: { throw InjectedClaudeProviderError(oauthSecret) }
         )
 
         do {
@@ -440,28 +434,6 @@ final class ProviderParsingTests: XCTestCase {
             let description = error.localizedDescription
             XCTAssertTrue(description.contains("OAuth"))
             XCTAssertTrue(description.contains("statusLine"))
-            XCTAssertFalse(description.contains(oauthSecret))
-        } catch {
-            XCTFail("Expected UsageServiceError, got \(error)")
-        }
-
-        let cliProvider = ClaudeUsageProvider(
-            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: { throw InjectedClaudeProviderError("OAuth should not run") },
-            cliAuthStatusFetcher: { true },
-            cliFetcher: { throw InjectedClaudeProviderError(cliSecret) }
-        )
-        do {
-            _ = try await cliProvider.fetchUsage(mode: .cliUsage)
-            XCTFail("Expected CLI and cache to fail.")
-        } catch let error as UsageServiceError {
-            guard case .claudeCLIAndCacheUnavailable = error else {
-                return XCTFail("Expected CLI-mode Claude error, got \(error)")
-            }
-            let description = error.localizedDescription
-            XCTAssertTrue(description.contains("CLI"))
-            XCTAssertTrue(description.contains("statusLine"))
-            XCTAssertFalse(description.contains(cliSecret))
             XCTAssertFalse(description.contains(oauthSecret))
         } catch {
             XCTFail("Expected UsageServiceError, got \(error)")

@@ -26,19 +26,30 @@ struct ClaudeOAuthKeychainReadResult: Sendable {
     let data: Data?
 }
 
-/// Explicit user-action boundary for the one Keychain path that may show macOS UI.
-/// Automatic refresh code must use `ClaudeOAuthCredentialLoader` instead.
-struct ClaudeOAuthUserInitiatedKeychainAccess: Sendable {
+/// Explicit user-action boundary for OAuth authorization.
+/// A valid Claude credentials file is accepted without touching Keychain. Only when
+/// the file is missing or unusable does this path perform a Keychain query that may
+/// show macOS UI. Automatic refresh code must use `ClaudeOAuthCredentialLoader`.
+struct ClaudeOAuthUserInitiatedAuthorization: Sendable {
+    typealias FileReader = @Sendable (URL) -> Data?
     typealias KeychainReader = @Sendable () -> ClaudeOAuthKeychainReadResult
 
+    private let credentialsURL: URL
+    private let fileReader: FileReader
     private let keychainReader: KeychainReader
     private let now: @Sendable () -> Date
 
     init(
+        credentialsURL: URL = ClaudeOAuthUsageClient.defaultCredentialsURL,
+        fileReader: @escaping FileReader = {
+            try? Data(contentsOf: $0, options: .mappedIfSafe)
+        },
         keychainReader: @escaping KeychainReader = ClaudeOAuthUsageClient
             .readKeychainCredentialDataAllowingUI,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
+        self.credentialsURL = credentialsURL
+        self.fileReader = fileReader
         self.keychainReader = keychainReader
         self.now = now
     }
@@ -47,6 +58,18 @@ struct ClaudeOAuthUserInitiatedKeychainAccess: Sendable {
     /// The result never contains credential material, response bodies, or raw errors.
     func requestAccessFromUserAction() async -> ClaudeOAuthUserInitiatedAccessResult {
         guard !Task.isCancelled else { return .cancelled }
+
+        let credentialsURL = credentialsURL
+        let fileReader = fileReader
+        let fileData = await Task.detached(priority: .userInitiated) {
+            fileReader(credentialsURL)
+        }.value
+        guard !Task.isCancelled else { return .cancelled }
+
+        if inspectCredential(fileData) == .available {
+            return .available
+        }
+
         let keychainReader = keychainReader
         let readResult = await Task.detached(priority: .userInitiated) {
             keychainReader()
@@ -146,6 +169,9 @@ struct ClaudeOAuthUsageClient: Sendable {
 
     private static let betaHeader = "oauth-2025-04-20"
     private static let keychainService = "Claude Code-credentials"
+    static let defaultCredentialsURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude", isDirectory: true)
+        .appendingPathComponent(".credentials.json", isDirectory: false)
 
     private let session: URLSession
     private let baseURL: URL
@@ -156,9 +182,7 @@ struct ClaudeOAuthUsageClient: Sendable {
     init(
         session: URLSession? = nil,
         baseURL: URL = URL(string: "https://api.anthropic.com")!,
-        credentialsURL: URL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude", isDirectory: true)
-            .appendingPathComponent(".credentials.json", isDirectory: false),
+        credentialsURL: URL = Self.defaultCredentialsURL,
         credentialLoader: CredentialLoader? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {

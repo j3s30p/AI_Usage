@@ -12,7 +12,6 @@ enum UsageServiceError: LocalizedError, Sendable {
     case usageCacheWaiting
     case usageLimitsUnavailable
     case claudeOAuthAndCacheUnavailable
-    case claudeCLIAndCacheUnavailable
     case serviceUnavailable(String)
 
     var errorDescription: String? {
@@ -39,8 +38,6 @@ enum UsageServiceError: LocalizedError, Sendable {
             "Claude 사용 한도는 Claude.ai Pro/Max 로그인에서만 제공됩니다. API 키 세션은 지원되지 않습니다."
         case .claudeOAuthAndCacheUnavailable:
             "Claude OAuth를 무팝업으로 읽지 못했고 statusLine 캐시도 없습니다. Keychain 연결을 확인하거나 Claude Code에서 메시지를 보낸 뒤 다시 시도해 주세요."
-        case .claudeCLIAndCacheUnavailable:
-            "Claude CLI /usage를 조회하지 못했고 statusLine 캐시도 없습니다. claude auth status 로그인 상태를 확인하거나 Claude Code에서 메시지를 보낸 뒤 다시 시도해 주세요."
         case .serviceUnavailable(let name):
             "\(name) 사용량 서비스에 연결할 수 없습니다."
         }

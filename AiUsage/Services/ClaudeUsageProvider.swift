@@ -2,23 +2,17 @@ import Foundation
 
 struct ClaudeUsageProvider: UsageFetching {
     typealias OAuthFetcher = @Sendable () async throws -> ClaudeOAuthUsageResponse
-    typealias CLIAuthStatusFetcher = @Sendable () async throws -> Bool
-    typealias CLIFetcher = @Sendable () async throws -> ClaudeCLIUsageSnapshot
 
     let provider = UsageProvider.claude
     static let cacheMaximumAge: TimeInterval = 15 * 60
 
     private let cacheURL: URL
     private let oauthFetcher: OAuthFetcher
-    private let cliAuthStatusFetcher: CLIAuthStatusFetcher
-    private let cliFetcher: CLIFetcher
     private let now: @Sendable () -> Date
 
     init(
         cacheURL: URL = Self.defaultCacheURL,
         oauthFetcher: OAuthFetcher? = nil,
-        cliAuthStatusFetcher: CLIAuthStatusFetcher? = nil,
-        cliFetcher: CLIFetcher? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.cacheURL = cacheURL
@@ -27,18 +21,6 @@ struct ClaudeUsageProvider: UsageFetching {
         } else {
             let client = ClaudeOAuthUsageClient()
             self.oauthFetcher = { try await client.fetchUsage() }
-        }
-        if let cliAuthStatusFetcher {
-            self.cliAuthStatusFetcher = cliAuthStatusFetcher
-        } else {
-            let probe = ClaudeCLIAuthStatusProbe()
-            self.cliAuthStatusFetcher = { try await probe.isLoggedIn() }
-        }
-        if let cliFetcher {
-            self.cliFetcher = cliFetcher
-        } else {
-            let probe = ClaudeCLIUsageProbe()
-            self.cliFetcher = { try await probe.fetchUsage() }
         }
         self.now = now
     }
@@ -54,8 +36,6 @@ struct ClaudeUsageProvider: UsageFetching {
             return try await fetchCachedUsage()
         case .oauth:
             return try await fetchOAuthOrCachedUsage()
-        case .cliUsage:
-            return try await fetchCLIOrCachedUsage()
         }
     }
 
@@ -70,33 +50,6 @@ struct ClaudeUsageProvider: UsageFetching {
 
         return try await fetchFallbackCache(
             unavailableError: .claudeOAuthAndCacheUnavailable
-        )
-    }
-
-    private func fetchCLIOrCachedUsage() async throws -> UsageSnapshot {
-        try Task.checkCancellation()
-        let isLoggedIn: Bool
-        do {
-            isLoggedIn = try await cliAuthStatusFetcher()
-        } catch {
-            try Self.rethrowCancellation(error)
-            return try await fetchFallbackCache(
-                unavailableError: .claudeCLIAndCacheUnavailable
-            )
-        }
-
-        try Task.checkCancellation()
-        if isLoggedIn {
-            do {
-                let response = try await cliFetcher()
-                return try Self.makeSnapshot(from: response, fetchedAt: now())
-            } catch {
-                try Self.rethrowCancellation(error)
-            }
-        }
-
-        return try await fetchFallbackCache(
-            unavailableError: .claudeCLIAndCacheUnavailable
         )
     }
 
@@ -176,44 +129,6 @@ struct ClaudeUsageProvider: UsageFetching {
     }
 
     static func makeSnapshot(
-        from response: ClaudeCLIUsageSnapshot,
-        fetchedAt: Date = .now
-    ) throws -> UsageSnapshot {
-        guard response.sessionUsedPercentage.isFinite,
-              let resetAt = resetDate(
-                  from: response.sessionResetDescription,
-                  relativeTo: fetchedAt
-              )
-        else {
-            throw UsageServiceError.currentWindowUnavailable("Claude")
-        }
-
-        let weekly: UsageLimitWindow?
-        if let usedPercentage = response.weeklyUsedPercentage,
-           usedPercentage.isFinite,
-           let weeklyResetAt = resetDate(
-               from: response.weeklyResetDescription,
-               relativeTo: fetchedAt
-           ) {
-            weekly = makeWindow(
-                usedPercentage: usedPercentage,
-                resetAt: weeklyResetAt
-            )
-        } else {
-            weekly = nil
-        }
-        return UsageSnapshot(
-            provider: .claude,
-            remainingFraction: remainingFraction(
-                for: response.sessionUsedPercentage
-            ),
-            resetAt: resetAt,
-            weekly: weekly,
-            fetchedAt: fetchedAt
-        )
-    }
-
-    static func makeSnapshot(
         from response: ClaudeUsageResponse,
         fetchedAt: Date = .now
     ) throws -> UsageSnapshot {
@@ -280,92 +195,6 @@ struct ClaudeUsageProvider: UsageFetching {
         if error is CancellationError || Task.isCancelled {
             throw CancellationError()
         }
-    }
-
-    private static func resetDate(
-        from description: String?,
-        relativeTo now: Date
-    ) -> Date? {
-        guard var text = description?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !text.isEmpty
-        else { return nil }
-
-        text = text.replacingOccurrences(
-            of: #"(?i)^resets?:?\s*"#,
-            with: "",
-            options: .regularExpression
-        )
-        text = text.replacingOccurrences(
-            of: " at ",
-            with: " ",
-            options: .caseInsensitive
-        )
-
-        let timeZone: TimeZone
-        if let range = text.range(of: #"\(([^)]+)\)"#, options: .regularExpression) {
-            let identifier = String(text[range])
-                .trimmingCharacters(in: CharacterSet(charactersIn: "() "))
-            guard let parsedTimeZone = TimeZone(identifier: identifier) else {
-                return nil
-            }
-            timeZone = parsedTimeZone
-            text.removeSubrange(range)
-        } else {
-            timeZone = .current
-        }
-        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = timeZone
-        formatter.isLenient = false
-        formatter.defaultDate = Date(timeIntervalSince1970: 946_684_800)
-
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
-
-        let dateFormats = [
-            "MMM d, h:mma", "MMM d, h:mm a", "MMM d h:mma", "MMM d h:mm a",
-            "MMM d, ha", "MMM d, h a", "MMM d ha", "MMM d h a",
-        ]
-        for format in dateFormats {
-            formatter.dateFormat = format
-            guard let parsed = formatter.date(from: text) else { continue }
-            let components = calendar.dateComponents(
-                [.month, .day, .hour, .minute],
-                from: parsed
-            )
-            let currentYear = calendar.component(.year, from: now)
-            for yearOffset in 0...8 {
-                var candidateComponents = components
-                candidateComponents.year = currentYear + yearOffset
-                candidateComponents.second = 0
-                if let candidate = calendar.date(from: candidateComponents), candidate > now {
-                    return candidate
-                }
-            }
-            return nil
-        }
-
-        let timeFormats = ["h:mma", "h:mm a", "ha", "h a", "HH:mm", "H:mm"]
-        for format in timeFormats {
-            formatter.dateFormat = format
-            guard let parsed = formatter.date(from: text) else { continue }
-            let time = calendar.dateComponents([.hour, .minute], from: parsed)
-            var day = calendar.dateComponents([.year, .month, .day], from: now)
-            day.hour = time.hour
-            day.minute = time.minute
-            day.second = 0
-            guard var candidate = calendar.date(from: day) else { return nil }
-            if candidate <= now {
-                guard let nextDay = calendar.date(byAdding: .day, value: 1, to: candidate) else {
-                    return nil
-                }
-                candidate = nextDay
-            }
-            return candidate
-        }
-        return nil
     }
 
     private struct CachedUsage: Sendable {
