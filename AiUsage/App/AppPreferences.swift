@@ -16,6 +16,10 @@ final class AppPreferences {
         didSet { defaults.set(showPercentage, forKey: Keys.showPercentage) }
     }
 
+    var providerDisplayMode: ProviderDisplayMode {
+        didSet { defaults.set(providerDisplayMode.rawValue, forKey: Keys.providerDisplayMode) }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -35,6 +39,9 @@ final class AppPreferences {
             defaultValue: true,
             defaults: defaults
         )
+        providerDisplayMode = defaults.string(forKey: Keys.providerDisplayMode)
+            .flatMap(ProviderDisplayMode.init(rawValue:))
+            ?? .name
     }
 
     var enabledProviders: Set<UsageProvider> {
@@ -57,5 +64,6 @@ final class AppPreferences {
         static let showCodex = "showCodex"
         static let showClaude = "showClaude"
         static let showPercentage = "showPercentage"
+        static let providerDisplayMode = "providerDisplayMode"
     }
 }

@@ -9,7 +9,15 @@ struct RemainingRing: View {
         ZStack {
             if let remainingFraction {
                 let remaining = Self.normalizedRemaining(remainingFraction)
-                if remaining >= 1 {
+                if Self.isDisplayedAsZero(remaining) {
+                    Circle()
+                        .trim(from: 0, to: Self.zeroRemainingDisplayFraction)
+                        .stroke(
+                            .red,
+                            style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
+                        )
+                        .rotationEffect(.degrees(-90))
+                } else if remaining >= 1 {
                     Circle()
                         .stroke(
                             .primary,
@@ -48,4 +56,10 @@ struct RemainingRing: View {
     nonisolated static func trimStart(forRemaining value: Double) -> Double {
         1 - normalizedRemaining(value)
     }
+
+    nonisolated static func isDisplayedAsZero(_ value: Double) -> Bool {
+        Int((normalizedRemaining(value) * 100).rounded()) == 0
+    }
+
+    nonisolated static let zeroRemainingDisplayFraction = 1.0 / 360.0
 }

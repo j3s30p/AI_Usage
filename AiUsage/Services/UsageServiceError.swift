@@ -8,10 +8,9 @@ enum UsageServiceError: LocalizedError, Sendable {
     case requestTimedOut(String)
     case invalidResponse(String)
     case currentWindowUnavailable(String)
-    case credentialsUnavailable
-    case credentialsInvalid
-    case credentialsAccessDenied
-    case authenticationExpired
+    case usageCacheUnavailable(String)
+    case usageCacheWaiting
+    case usageLimitsUnavailable
     case serviceUnavailable(String)
 
     var errorDescription: String? {
@@ -30,14 +29,12 @@ enum UsageServiceError: LocalizedError, Sendable {
             "\(name) 사용량 응답을 읽을 수 없습니다."
         case .currentWindowUnavailable(let name):
             "\(name)의 현재 5시간 사용량을 찾지 못했습니다."
-        case .credentialsUnavailable:
-            "Claude Code 로그인 정보를 찾지 못했습니다. Claude Code에서 로그인해 주세요."
-        case .credentialsInvalid:
-            "Claude Code 로그인 정보를 읽을 수 없습니다. Claude Code에서 다시 로그인해 주세요."
-        case .credentialsAccessDenied:
-            "Claude 사용량을 읽으려면 키체인 접근을 허용해 주세요."
-        case .authenticationExpired:
-            "Claude 로그인이 만료되었습니다. Claude Code에서 다시 로그인해 주세요."
+        case .usageCacheUnavailable(let name):
+            "\(name) statusLine 캐시가 없습니다. Claude Code를 다시 시작하고 메시지를 보낸 뒤 새로 고침해 주세요."
+        case .usageCacheWaiting:
+            "Claude Code의 첫 응답을 기다리는 중입니다."
+        case .usageLimitsUnavailable:
+            "Claude 사용 한도는 Claude.ai Pro/Max 로그인에서만 제공됩니다. API 키 세션은 지원되지 않습니다."
         case .serviceUnavailable(let name):
             "\(name) 사용량 서비스에 연결할 수 없습니다."
         }

@@ -2,25 +2,40 @@ import Foundation
 
 struct UsageSnapshot: Sendable, Codable, Equatable {
     let provider: UsageProvider
-    let remainingFraction: Double
-    let resetAt: Date
+    let fiveHour: UsageLimitWindow
+    let weekly: UsageLimitWindow?
     let fetchedAt: Date
 
     init(
         provider: UsageProvider,
         remainingFraction: Double,
         resetAt: Date,
+        weekly: UsageLimitWindow? = nil,
         fetchedAt: Date
     ) {
         self.provider = provider
-        self.remainingFraction = remainingFraction.isFinite
-            ? min(max(remainingFraction, 0), 1)
-            : 0
-        self.resetAt = resetAt
+        fiveHour = UsageLimitWindow(
+            remainingFraction: remainingFraction,
+            resetAt: resetAt
+        )
+        self.weekly = weekly
         self.fetchedAt = fetchedAt
     }
 
+    var remainingFraction: Double {
+        fiveHour.remainingFraction
+    }
+
+    var resetAt: Date {
+        fiveHour.resetAt
+    }
+
     var remainingPercentage: Int {
-        Int((remainingFraction * 100).rounded())
+        fiveHour.remainingPercentage
+    }
+
+    func isCurrent(at date: Date, maximumAge: TimeInterval) -> Bool {
+        let age = date.timeIntervalSince(fetchedAt)
+        return resetAt > date && age >= 0 && age <= maximumAge
     }
 }

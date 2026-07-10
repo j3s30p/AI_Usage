@@ -40,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = preferences.showCodex
             _ = preferences.showClaude
             _ = preferences.showPercentage
+            _ = preferences.providerDisplayMode
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }

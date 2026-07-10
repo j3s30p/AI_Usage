@@ -14,6 +14,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.showCodex)
         XCTAssertTrue(preferences.showClaude)
         XCTAssertTrue(preferences.showPercentage)
+        XCTAssertEqual(preferences.providerDisplayMode, .name)
         XCTAssertEqual(preferences.enabledProviders, Set(UsageProvider.allCases))
     }
 
@@ -26,11 +27,13 @@ final class AppPreferencesTests: XCTestCase {
         preferences.showCodex = false
         preferences.showClaude = true
         preferences.showPercentage = false
+        preferences.providerDisplayMode = .logo
 
         let reloaded = AppPreferences(defaults: defaults)
         XCTAssertFalse(reloaded.showCodex)
         XCTAssertTrue(reloaded.showClaude)
         XCTAssertFalse(reloaded.showPercentage)
+        XCTAssertEqual(reloaded.providerDisplayMode, .logo)
         XCTAssertEqual(reloaded.enabledProviders, [.claude])
     }
 }

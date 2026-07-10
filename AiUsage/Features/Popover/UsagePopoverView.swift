@@ -33,12 +33,18 @@ struct UsagePopoverView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 130)
             } else {
-                ForEach(providers) { provider in
-                    ProviderUsageRow(
-                        provider: provider,
-                        state: model.state(for: provider)
-                    )
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(providers) { provider in
+                            ProviderUsageRow(
+                                provider: provider,
+                                state: model.state(for: provider)
+                            )
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
+                .scrollBounceBehavior(.basedOnSize)
             }
 
             Divider()
@@ -58,6 +64,6 @@ struct UsagePopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 340, height: 390)
     }
 }

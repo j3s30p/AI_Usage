@@ -26,20 +26,32 @@ struct CodexUsageProvider: UsageFetching {
         }
         snapshots.append(response.rateLimits)
 
-        guard let window = snapshots
-            .lazy
-            .flatMap(\.windows)
-            .first(where: { $0.windowDurationMins == 300 }),
-            let resetTimestamp = window.resetsAt
+        let windows = snapshots.flatMap(\.windows)
+        guard let fiveHourWindow = windows.first(where: {
+            $0.windowDurationMins == 300
+        }),
+            let fiveHourResetTimestamp = fiveHourWindow.resetsAt
         else {
             throw UsageServiceError.currentWindowUnavailable("Codex")
         }
 
-        let remainingFraction = 1 - (window.usedPercent / 100)
+        let weekly = windows.first(where: {
+            $0.windowDurationMins == 10_080
+        }).flatMap { window -> UsageLimitWindow? in
+            guard let resetTimestamp = window.resetsAt else { return nil }
+            return UsageLimitWindow(
+                remainingFraction: 1 - (window.usedPercent / 100),
+                resetAt: Date(timeIntervalSince1970: TimeInterval(resetTimestamp))
+            )
+        }
+
         return UsageSnapshot(
             provider: .codex,
-            remainingFraction: remainingFraction,
-            resetAt: Date(timeIntervalSince1970: TimeInterval(resetTimestamp)),
+            remainingFraction: 1 - (fiveHourWindow.usedPercent / 100),
+            resetAt: Date(
+                timeIntervalSince1970: TimeInterval(fiveHourResetTimestamp)
+            ),
+            weekly: weekly,
             fetchedAt: fetchedAt
         )
     }

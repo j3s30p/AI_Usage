@@ -2,19 +2,47 @@ import AppKit
 
 struct MenuBarStatusSegment: Equatable, Sendable {
     let name: String
+    let logoAssetName: String?
+    let logoSourceInsetFraction: CGFloat
     let remainingFraction: Double?
     let percentageText: String?
+
+    init(
+        name: String,
+        logoAssetName: String? = nil,
+        logoSourceInsetFraction: CGFloat = 0,
+        remainingFraction: Double?,
+        percentageText: String?
+    ) {
+        self.name = name
+        self.logoAssetName = logoAssetName
+        self.logoSourceInsetFraction = logoSourceInsetFraction
+        self.remainingFraction = remainingFraction
+        self.percentageText = percentageText
+    }
+}
+
+struct MenuBarStatusRendering {
+    let image: NSImage
+    let zeroRemainingRingCenters: [NSPoint]
 }
 
 @MainActor
 enum MenuBarStatusImageRenderer {
     private static let canvasHeight: CGFloat = 18
+    private static let logoSize: CGFloat = 14
     private static let ringSize: CGFloat = 12
     private static let ringLineWidth: CGFloat = 1.4
     private static let itemSpacing: CGFloat = 4
-    private static let providerSpacing: CGFloat = 10
+    private static let dotSize: CGFloat = 2
+    private static let providerSeparatorPadding: CGFloat = 8
+    private static let providerSeparatorWidth: CGFloat = 1
 
     static func makeImage(segments: [MenuBarStatusSegment]) -> NSImage {
+        makeRendering(segments: segments).image
+    }
+
+    static func makeRendering(segments: [MenuBarStatusSegment]) -> MenuBarStatusRendering {
         let font = NSFont.systemFont(ofSize: 13)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -22,17 +50,35 @@ enum MenuBarStatusImageRenderer {
         ]
         let widths = segments.map { segmentWidth($0, attributes: attributes) }
         let contentWidth = widths.reduce(0, +)
-            + providerSpacing * CGFloat(max(segments.count - 1, 0))
+            + providerSeparatorTotalWidth * CGFloat(max(segments.count - 1, 0))
         let imageSize = NSSize(width: ceil(contentWidth), height: canvasHeight)
+        let ringCenters = ringCenterXPositions(segments, attributes: attributes)
+        let zeroRemainingRingCenters = zip(segments, ringCenters).compactMap { pair -> NSPoint? in
+            let (segment, x) = pair
+            guard let remainingFraction = segment.remainingFraction,
+                  RemainingRing.isDisplayedAsZero(remainingFraction)
+            else { return nil }
+            return NSPoint(x: x, y: canvasHeight / 2)
+        }
 
         let image = NSImage(size: imageSize, flipped: false) { _ in
             var x: CGFloat = 0
             for (index, segment) in segments.enumerated() {
-                if index > 0 { x += providerSpacing }
+                if index > 0 {
+                    x += providerSeparatorPadding
+                    drawProviderSeparator(atX: x)
+                    x += providerSeparatorWidth + providerSeparatorPadding
+                }
 
-                let nameSize = textSize(segment.name, attributes: attributes)
-                drawText(segment.name, atX: x, size: nameSize, attributes: attributes)
-                x += nameSize.width + itemSpacing
+                let markWidth = drawProviderMark(
+                    segment,
+                    atX: x,
+                    attributes: attributes
+                )
+                x += markWidth + itemSpacing
+
+                drawDot(atX: x)
+                x += dotSize + itemSpacing
 
                 let ringRect = NSRect(
                     x: x,
@@ -58,20 +104,135 @@ enum MenuBarStatusImageRenderer {
             return true
         }
         image.isTemplate = true
-        return image
+        return MenuBarStatusRendering(
+            image: image,
+            zeroRemainingRingCenters: zeroRemainingRingCenters
+        )
+    }
+
+    private static func ringCenterXPositions(
+        _ segments: [MenuBarStatusSegment],
+        attributes: [NSAttributedString.Key: Any]
+    ) -> [CGFloat] {
+        var x: CGFloat = 0
+        return segments.enumerated().map { index, segment in
+            if index > 0 {
+                x += providerSeparatorTotalWidth
+            }
+            x += providerMarkWidth(segment, attributes: attributes)
+                + itemSpacing
+                + dotSize
+                + itemSpacing
+            let centerX = x + ringSize / 2
+            x += ringSize
+            if let percentageText = segment.percentageText {
+                x += itemSpacing + textSize(percentageText, attributes: attributes).width
+            }
+            return centerX
+        }
     }
 
     private static func segmentWidth(
         _ segment: MenuBarStatusSegment,
         attributes: [NSAttributedString.Key: Any]
     ) -> CGFloat {
-        var width = textSize(segment.name, attributes: attributes).width
+        var width = providerMarkWidth(segment, attributes: attributes)
+            + itemSpacing
+            + dotSize
             + itemSpacing
             + ringSize
         if let percentageText = segment.percentageText {
             width += itemSpacing + textSize(percentageText, attributes: attributes).width
         }
         return width
+    }
+
+    private static var providerSeparatorTotalWidth: CGFloat {
+        providerSeparatorPadding * 2 + providerSeparatorWidth
+    }
+
+    private static func providerMarkWidth(
+        _ segment: MenuBarStatusSegment,
+        attributes: [NSAttributedString.Key: Any]
+    ) -> CGFloat {
+        if providerLogo(for: segment) != nil {
+            return logoSize
+        }
+        return textSize(segment.name, attributes: attributes).width
+    }
+
+    @discardableResult
+    private static func drawProviderMark(
+        _ segment: MenuBarStatusSegment,
+        atX x: CGFloat,
+        attributes: [NSAttributedString.Key: Any]
+    ) -> CGFloat {
+        if let logo = providerLogo(for: segment) {
+            let rect = NSRect(
+                x: x,
+                y: (canvasHeight - logoSize) / 2,
+                width: logoSize,
+                height: logoSize
+            )
+            logo.draw(
+                in: rect,
+                from: providerLogoSourceRect(for: segment, image: logo),
+                operation: .sourceOver,
+                fraction: 1,
+                respectFlipped: true,
+                hints: [.interpolation: NSImageInterpolation.high]
+            )
+            return logoSize
+        }
+
+        let nameSize = textSize(segment.name, attributes: attributes)
+        drawText(segment.name, atX: x, size: nameSize, attributes: attributes)
+        return nameSize.width
+    }
+
+    private static func providerLogo(for segment: MenuBarStatusSegment) -> NSImage? {
+        guard let logoAssetName = segment.logoAssetName else { return nil }
+        return NSImage(named: NSImage.Name(logoAssetName))
+    }
+
+    private static func providerLogoSourceRect(
+        for segment: MenuBarStatusSegment,
+        image: NSImage
+    ) -> NSRect {
+        let inset = min(max(segment.logoSourceInsetFraction, 0), 0.49)
+        guard inset > 0 else { return .zero }
+
+        let xInset = image.size.width * inset
+        let yInset = image.size.height * inset
+        return NSRect(
+            x: xInset,
+            y: yInset,
+            width: image.size.width - (xInset * 2),
+            height: image.size.height - (yInset * 2)
+        )
+    }
+
+    private static func drawDot(atX x: CGFloat) {
+        let rect = NSRect(
+            x: x,
+            y: (canvasHeight - dotSize) / 2,
+            width: dotSize,
+            height: dotSize
+        )
+        NSColor.white.withAlphaComponent(0.68).setFill()
+        NSBezierPath(ovalIn: rect).fill()
+    }
+
+    private static func drawProviderSeparator(atX x: CGFloat) {
+        let separatorHeight: CGFloat = 10
+        let rect = NSRect(
+            x: x,
+            y: (canvasHeight - separatorHeight) / 2,
+            width: providerSeparatorWidth,
+            height: separatorHeight
+        )
+        NSColor.white.withAlphaComponent(0.38).setFill()
+        NSBezierPath(rect: rect).fill()
     }
 
     private static func textSize(
@@ -107,7 +268,7 @@ enum MenuBarStatusImageRenderer {
         }
 
         let remaining = RemainingRing.normalizedRemaining(remainingFraction)
-        guard remaining > 0 else { return }
+        guard !RemainingRing.isDisplayedAsZero(remaining) else { return }
 
         let foreground: NSBezierPath
         if remaining >= 1 {

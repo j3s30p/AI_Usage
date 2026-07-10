@@ -7,18 +7,20 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
     private let preferences: AppPreferences
     private let statusItem: NSStatusItem
     private let popover: NSPopover
+    private let alertOverlay: MenuBarAlertOverlayView
 
     init(model: AppModel, preferences: AppPreferences) {
         self.model = model
         self.preferences = preferences
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
+        alertOverlay = MenuBarAlertOverlayView(frame: .zero)
         super.init()
 
         popover.behavior = .transient
         popover.animates = true
         popover.delegate = self
-        popover.contentSize = NSSize(width: 320, height: 240)
+        popover.contentSize = NSSize(width: 340, height: 390)
         popover.contentViewController = NSHostingController(
             rootView: UsagePopoverView(model: model, preferences: preferences)
         )
@@ -29,6 +31,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             button.sendAction(on: [.leftMouseUp])
             button.imagePosition = .imageOnly
             button.imageScaling = .scaleNone
+            alertOverlay.frame = button.bounds
+            button.addSubview(alertOverlay)
         }
 
         updateStatusItem()
@@ -48,36 +52,60 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             image?.isTemplate = true
             statusItem.length = 28
             button.image = image
+            alertOverlay.clear()
             button.setAccessibilityLabel("AiUsage")
             button.toolTip = "AiUsage"
             return
         }
 
+        let now = Date.now
         let segments = providers.map { provider in
-            let snapshot = model.state(for: provider).snapshot
+            let snapshot = menuBarSnapshot(for: provider, at: now)
             return MenuBarStatusSegment(
                 name: provider.displayName,
+                logoAssetName: preferences.providerDisplayMode == .logo
+                    ? provider.logoAssetName
+                    : nil,
+                logoSourceInsetFraction: provider.logoSourceInsetFraction,
                 remainingFraction: snapshot?.remainingFraction,
                 percentageText: preferences.showPercentage
                     ? snapshot.map { "\($0.remainingPercentage)%" } ?? "–%"
                     : nil
             )
         }
-        let image = MenuBarStatusImageRenderer.makeImage(segments: segments)
-        statusItem.length = image.size.width + 10
-        button.image = image
+        let rendering = MenuBarStatusImageRenderer.makeRendering(segments: segments)
+        statusItem.length = rendering.image.size.width + 10
+        button.image = rendering.image
+        alertOverlay.frame = button.bounds
+        alertOverlay.update(with: rendering)
 
         let accessibilityLabel = providers.map { provider in
-            if let snapshot = model.state(for: provider).snapshot {
+            let state = model.state(for: provider)
+            if let snapshot = menuBarSnapshot(for: provider, at: now) {
                 return "\(provider.displayName), \(snapshot.remainingPercentage)% 남음"
             }
-            if let failure = model.state(for: provider).failure {
+            if let failure = state.failure {
                 return "\(provider.displayName), \(failure.message)"
+            }
+            if provider == .claude, state.snapshot != nil {
+                return "Claude, 마지막 사용량이 오래되어 Claude Code 갱신 필요"
             }
             return "\(provider.displayName), 사용량을 불러오는 중"
         }.joined(separator: ", ")
         button.setAccessibilityLabel(accessibilityLabel)
         button.toolTip = accessibilityLabel
+    }
+
+    private func menuBarSnapshot(
+        for provider: UsageProvider,
+        at date: Date
+    ) -> UsageSnapshot? {
+        guard let snapshot = model.state(for: provider).snapshot else { return nil }
+        guard provider == .claude else { return snapshot }
+        return snapshot.isCurrent(
+            at: date,
+            maximumAge: ClaudeUsageProvider.cacheMaximumAge
+        ) ? snapshot : nil
     }
 
     @objc

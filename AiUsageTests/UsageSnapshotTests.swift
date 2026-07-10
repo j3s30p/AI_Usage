@@ -43,4 +43,50 @@ final class UsageSnapshotTests: XCTestCase {
 
         XCTAssertEqual(snapshot.remainingFraction, 0)
     }
+
+    func testWeeklyWindowIsOptionalAndClampedIndependently() {
+        let date = Date(timeIntervalSince1970: 1_000)
+        let weekly = UsageLimitWindow(
+            remainingFraction: 1.4,
+            resetAt: date.addingTimeInterval(7_200)
+        )
+        let snapshot = UsageSnapshot(
+            provider: .codex,
+            remainingFraction: 0.51,
+            resetAt: date.addingTimeInterval(3_600),
+            weekly: weekly,
+            fetchedAt: date
+        )
+
+        XCTAssertEqual(snapshot.remainingPercentage, 51)
+        XCTAssertEqual(snapshot.weekly?.remainingFraction, 1)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 100)
+        XCTAssertEqual(snapshot.weekly?.resetAt, date.addingTimeInterval(7_200))
+    }
+
+    func testCurrentSnapshotRequiresFutureResetAndFreshCapture() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let fresh = UsageSnapshot(
+            provider: .claude,
+            remainingFraction: 0.5,
+            resetAt: now.addingTimeInterval(60),
+            fetchedAt: now.addingTimeInterval(-899)
+        )
+        let stale = UsageSnapshot(
+            provider: .claude,
+            remainingFraction: 0.5,
+            resetAt: now.addingTimeInterval(60),
+            fetchedAt: now.addingTimeInterval(-901)
+        )
+        let expired = UsageSnapshot(
+            provider: .claude,
+            remainingFraction: 0.5,
+            resetAt: now,
+            fetchedAt: now
+        )
+
+        XCTAssertTrue(fresh.isCurrent(at: now, maximumAge: 900))
+        XCTAssertFalse(stale.isCurrent(at: now, maximumAge: 900))
+        XCTAssertFalse(expired.isCurrent(at: now, maximumAge: 900))
+    }
 }

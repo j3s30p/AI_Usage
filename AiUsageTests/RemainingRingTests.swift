@@ -14,4 +14,17 @@ final class RemainingRingTests: XCTestCase {
         XCTAssertEqual(RemainingRing.normalizedRemaining(2), 1)
         XCTAssertEqual(RemainingRing.normalizedRemaining(.infinity), 0)
     }
+
+    func testZeroRemainingKeepsOneDegreeVisible() {
+        XCTAssertEqual(
+            RemainingRing.zeroRemainingDisplayFraction,
+            1.0 / 360.0,
+            accuracy: 0.000_001
+        )
+    }
+
+    func testDisplayedZeroMatchesRoundedPercentageBoundary() {
+        XCTAssertTrue(RemainingRing.isDisplayedAsZero(0.004))
+        XCTAssertFalse(RemainingRing.isDisplayedAsZero(0.005))
+    }
 }
