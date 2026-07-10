@@ -7,7 +7,12 @@ struct AiUsageApp: App {
 
     var body: some Scene {
         Settings {
-            SettingsView(preferences: appDelegate.preferences)
+            SettingsView(
+                preferences: appDelegate.preferences,
+                onConnectClaudeKeychain: {
+                    try await appDelegate.connectClaudeKeychainFromUserAction()
+                }
+            )
         }
     }
 }

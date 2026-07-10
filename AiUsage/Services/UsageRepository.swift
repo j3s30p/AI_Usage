@@ -15,11 +15,21 @@ struct UsageRepository: UsageRepositoryProtocol, Sendable {
     func fetchUsage(
         for providers: Set<UsageProvider>
     ) async -> [UsageProvider: ProviderUsageResult] {
+        await fetchUsage(for: providers, claudeUsageMode: .statusLine)
+    }
+
+    func fetchUsage(
+        for providers: Set<UsageProvider>,
+        claudeUsageMode: ClaudeUsageMode
+    ) async -> [UsageProvider: ProviderUsageResult] {
         await withTaskGroup(of: (UsageProvider, ProviderUsageResult).self) { group in
             for provider in providers {
                 group.addTask {
                     do {
-                        let snapshot = try await fetch(provider)
+                        let snapshot = try await fetch(
+                            provider,
+                            claudeUsageMode: claudeUsageMode
+                        )
                         return (provider, .success(snapshot))
                     } catch {
                         let message = (error as? LocalizedError)?.errorDescription
@@ -75,12 +85,15 @@ struct UsageRepository: UsageRepositoryProtocol, Sendable {
         codexProvider.shutdown()
     }
 
-    private func fetch(_ provider: UsageProvider) async throws -> UsageSnapshot {
+    private func fetch(
+        _ provider: UsageProvider,
+        claudeUsageMode: ClaudeUsageMode
+    ) async throws -> UsageSnapshot {
         switch provider {
         case .codex:
             try await codexProvider.fetchUsage()
         case .claude:
-            try await claudeProvider.fetchUsage()
+            try await claudeProvider.fetchUsage(mode: claudeUsageMode)
         }
     }
 }

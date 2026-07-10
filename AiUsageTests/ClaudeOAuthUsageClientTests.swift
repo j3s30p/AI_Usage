@@ -204,10 +204,108 @@ final class ClaudeOAuthUsageClientTests: XCTestCase {
         XCTAssertEqual(readCount.value, 2)
     }
 
-    func testDefaultKeychainQueryForbidsAuthenticationUI() {
+    func testAutomaticKeychainQueryForbidsAuthenticationUIWithBothPolicies() {
         let query = ClaudeOAuthUsageClient.keychainQuery
         let context = query[kSecUseAuthenticationContext] as? LAContext
         XCTAssertEqual(context?.interactionNotAllowed, true)
+        XCTAssertEqual(
+            query[kSecUseAuthenticationUI] as? String,
+            ClaudeKeychainNoUIQuery.uiFailPolicyForTesting()
+        )
+    }
+
+    func testUserInitiatedKeychainQueryAllowsDefaultAuthenticationUI() {
+        let query = ClaudeOAuthUsageClient.userInitiatedKeychainQuery
+
+        XCTAssertNil(query[kSecUseAuthenticationContext])
+        XCTAssertNil(query[kSecUseAuthenticationUI])
+    }
+
+    func testUserInitiatedAccessReturnsOnlySanitizedCredentialState() async {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let secret = "credential-must-never-escape"
+        let credentialData = credentialJSON(
+            accessToken: secret,
+            expiresAt: now.addingTimeInterval(3_600)
+        )
+        let access = ClaudeOAuthUserInitiatedKeychainAccess(
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecSuccess,
+                    data: credentialData
+                )
+            },
+            now: { now }
+        )
+
+        let result = await access.requestAccessFromUserAction()
+
+        XCTAssertEqual(result, .available)
+        XCTAssertFalse(String(describing: result).contains(secret))
+    }
+
+    func testUserInitiatedAccessSanitizesDeniedCancelledAndInvalidResults() async {
+        let denied = ClaudeOAuthUserInitiatedKeychainAccess(
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecAuthFailed,
+                    data: Data("denied-secret".utf8)
+                )
+            }
+        )
+        let cancelled = ClaudeOAuthUserInitiatedKeychainAccess(
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecUserCanceled,
+                    data: Data("cancelled-secret".utf8)
+                )
+            }
+        )
+        let invalid = ClaudeOAuthUserInitiatedKeychainAccess(
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecSuccess,
+                    data: Data("invalid-secret".utf8)
+                )
+            }
+        )
+
+        let deniedResult = await denied.requestAccessFromUserAction()
+        let cancelledResult = await cancelled.requestAccessFromUserAction()
+        let invalidResult = await invalid.requestAccessFromUserAction()
+
+        XCTAssertEqual(deniedResult, .denied)
+        XCTAssertEqual(cancelledResult, .cancelled)
+        XCTAssertEqual(invalidResult, .invalidCredentials)
+        let descriptions = [deniedResult, cancelledResult, invalidResult]
+            .map(String.init(describing:))
+            .joined(separator: " ")
+        XCTAssertFalse(descriptions.contains("denied-secret"))
+        XCTAssertFalse(descriptions.contains("cancelled-secret"))
+        XCTAssertFalse(descriptions.contains("invalid-secret"))
+    }
+
+    func testUserInitiatedAccessReportsExpiredWithoutReturningCredential() async {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let secret = "expired-secret"
+        let credentialData = credentialJSON(
+            accessToken: secret,
+            expiresAt: now.addingTimeInterval(-1)
+        )
+        let access = ClaudeOAuthUserInitiatedKeychainAccess(
+            keychainReader: {
+                ClaudeOAuthKeychainReadResult(
+                    status: errSecSuccess,
+                    data: credentialData
+                )
+            },
+            now: { now }
+        )
+
+        let result = await access.requestAccessFromUserAction()
+
+        XCTAssertEqual(result, .expired)
+        XCTAssertFalse(String(describing: result).contains(secret))
     }
 
     private func makeSession() -> URLSession {

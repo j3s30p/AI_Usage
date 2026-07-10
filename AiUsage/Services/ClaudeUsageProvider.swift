@@ -2,6 +2,7 @@ import Foundation
 
 struct ClaudeUsageProvider: UsageFetching {
     typealias OAuthFetcher = @Sendable () async throws -> ClaudeOAuthUsageResponse
+    typealias CLIAuthStatusFetcher = @Sendable () async throws -> Bool
     typealias CLIFetcher = @Sendable () async throws -> ClaudeCLIUsageSnapshot
 
     let provider = UsageProvider.claude
@@ -9,12 +10,14 @@ struct ClaudeUsageProvider: UsageFetching {
 
     private let cacheURL: URL
     private let oauthFetcher: OAuthFetcher
+    private let cliAuthStatusFetcher: CLIAuthStatusFetcher
     private let cliFetcher: CLIFetcher
     private let now: @Sendable () -> Date
 
     init(
         cacheURL: URL = Self.defaultCacheURL,
         oauthFetcher: OAuthFetcher? = nil,
+        cliAuthStatusFetcher: CLIAuthStatusFetcher? = nil,
         cliFetcher: CLIFetcher? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -24,6 +27,12 @@ struct ClaudeUsageProvider: UsageFetching {
         } else {
             let client = ClaudeOAuthUsageClient()
             self.oauthFetcher = { try await client.fetchUsage() }
+        }
+        if let cliAuthStatusFetcher {
+            self.cliAuthStatusFetcher = cliAuthStatusFetcher
+        } else {
+            let probe = ClaudeCLIAuthStatusProbe()
+            self.cliAuthStatusFetcher = { try await probe.isLoggedIn() }
         }
         if let cliFetcher {
             self.cliFetcher = cliFetcher
@@ -35,6 +44,22 @@ struct ClaudeUsageProvider: UsageFetching {
     }
 
     func fetchUsage() async throws -> UsageSnapshot {
+        try await fetchUsage(mode: .statusLine)
+    }
+
+    func fetchUsage(mode: ClaudeUsageMode) async throws -> UsageSnapshot {
+        try Task.checkCancellation()
+        switch mode {
+        case .statusLine:
+            return try await fetchCachedUsage()
+        case .oauth:
+            return try await fetchOAuthOrCachedUsage()
+        case .cliUsage:
+            return try await fetchCLIOrCachedUsage()
+        }
+    }
+
+    private func fetchOAuthOrCachedUsage() async throws -> UsageSnapshot {
         try Task.checkCancellation()
         do {
             let response = try await oauthFetcher()
@@ -43,20 +68,47 @@ struct ClaudeUsageProvider: UsageFetching {
             try Self.rethrowCancellation(error)
         }
 
+        return try await fetchFallbackCache(
+            unavailableError: .claudeOAuthAndCacheUnavailable
+        )
+    }
+
+    private func fetchCLIOrCachedUsage() async throws -> UsageSnapshot {
         try Task.checkCancellation()
+        let isLoggedIn: Bool
         do {
-            let response = try await cliFetcher()
-            return try Self.makeSnapshot(from: response, fetchedAt: now())
+            isLoggedIn = try await cliAuthStatusFetcher()
         } catch {
             try Self.rethrowCancellation(error)
+            return try await fetchFallbackCache(
+                unavailableError: .claudeCLIAndCacheUnavailable
+            )
         }
 
+        try Task.checkCancellation()
+        if isLoggedIn {
+            do {
+                let response = try await cliFetcher()
+                return try Self.makeSnapshot(from: response, fetchedAt: now())
+            } catch {
+                try Self.rethrowCancellation(error)
+            }
+        }
+
+        return try await fetchFallbackCache(
+            unavailableError: .claudeCLIAndCacheUnavailable
+        )
+    }
+
+    private func fetchFallbackCache(
+        unavailableError: UsageServiceError
+    ) async throws -> UsageSnapshot {
         try Task.checkCancellation()
         do {
             return try await fetchCachedUsage()
         } catch {
             try Self.rethrowCancellation(error)
-            throw UsageServiceError.allSourcesUnavailable("Claude")
+            throw unavailableError
         }
     }
 

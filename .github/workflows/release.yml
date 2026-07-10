@@ -1,0 +1,107 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Validate version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a semantic version tag such as v0.1.0" >&2
+            exit 1
+          fi
+          project_version="$(
+            xcodebuild -project AiUsage.xcodeproj -scheme AiUsage \
+              -showBuildSettings \
+              | awk '/MARKETING_VERSION =/ { print $3; exit }'
+          )"
+          if [[ "$project_version" != "$version" ]]; then
+            echo "Tag version $version does not match MARKETING_VERSION $project_version" >&2
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: >-
+          xcodebuild test
+          -project AiUsage.xcodeproj
+          -scheme AiUsage
+          -destination 'platform=macOS'
+          CODE_SIGN_IDENTITY=-
+          CODE_SIGN_STYLE=Manual
+          DEVELOPMENT_TEAM=''
+
+      - name: Build universal app
+        run: >-
+          xcodebuild build
+          -project AiUsage.xcodeproj
+          -scheme AiUsage
+          -configuration Release
+          -destination 'generic/platform=macOS'
+          -derivedDataPath "$RUNNER_TEMP/DerivedData"
+          ARCHS='arm64 x86_64'
+          ONLY_ACTIVE_ARCH=NO
+          CODE_SIGN_IDENTITY=-
+          CODE_SIGN_STYLE=Manual
+          CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+          DEVELOPMENT_TEAM=''
+
+      - name: Package and verify
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/DerivedData/Build/Products/Release/AiUsage.app"
+          stage="$RUNNER_TEMP/AiUsage-$VERSION"
+          artifact="AiUsage-v$VERSION-macos-universal.zip"
+
+          mkdir -p "$stage"
+          cp -R "$app" "$stage/AiUsage.app"
+          install -m 755 Scripts/claude-statusline-aiusage.sh \
+            "$stage/claude-statusline-aiusage.sh"
+          ditto -c -k --sequesterRsrc "$stage" "$artifact"
+
+          verify="$RUNNER_TEMP/verify"
+          mkdir -p "$verify"
+          ditto -x -k "$artifact" "$verify"
+          lipo "$verify/AiUsage.app/Contents/MacOS/AiUsage" \
+            -verify_arch arm64 x86_64
+          codesign --verify --deep --strict --verbose=2 "$verify/AiUsage.app"
+          test -x "$verify/claude-statusline-aiusage.sh"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            "$verify/AiUsage.app/Contents/Info.plist")" = "$VERSION"
+
+          shasum -a 256 "$artifact" > "$artifact.sha256"
+          echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
+          echo "checksum=$artifact.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish unsigned preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: ${{ steps.package.outputs.artifact }}
+          CHECKSUM: ${{ steps.package.outputs.checksum }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$ARTIFACT" "$CHECKSUM" \
+            --prerelease \
+            --generate-notes \
+            --latest=false \
+            --notes "Unsigned preview: after the first blocked launch, macOS may require System Settings → Privacy & Security → Open Anyway. Gatekeeper is not bypassed." \
+            --verify-tag \
+            --title "AiUsage $GITHUB_REF_NAME (unsigned preview)"

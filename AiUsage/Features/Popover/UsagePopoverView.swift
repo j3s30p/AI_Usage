@@ -17,7 +17,10 @@ struct UsagePopoverView: View {
                 Spacer()
                 Button("새로 고침", systemImage: "arrow.clockwise") {
                     Task {
-                        await model.refresh(providers: preferences.enabledProviders)
+                        await model.refresh(
+                            providers: preferences.enabledProviders,
+                            claudeUsageMode: preferences.claudeUsageMode
+                        )
                     }
                 }
                 .labelStyle(.iconOnly)
