@@ -23,6 +23,13 @@ brew install --cask j3s30p/tap/aiusage
 open -a AiUsage
 ```
 
+기존 설치는 다음 명령으로 최신 버전으로 올릴 수 있습니다.
+
+```bash
+brew update
+brew upgrade --cask j3s30p/tap/aiusage
+```
+
 `v1.0.0`부터 Homebrew와 GitHub Release에 배포되는 앱은 Developer ID Application으로 서명하고
 Apple 공증 티켓을 포함합니다.
 

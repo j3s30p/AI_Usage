@@ -35,8 +35,9 @@ ZIP으로 `.app`을 배포하므로 `Developer ID Installer` 인증서는 필요
 현재 `release` environment의 deployment branch policy는 `v*` 태그만 허용합니다.
 
 다음 여섯 값을 저장소의 Actions secret으로 등록합니다. `release` environment는 배포 승인과
-태그 보호에 사용하며, 저장소 secret은 해당 environment를 사용하는 릴리스 job에서도 읽을 수
-있습니다. 조직 정책상 environment secret을 사용한다면 같은 이름으로 등록해도 됩니다.
+`v*` 태그만 배포 대상으로 허용하는 데 사용하며, 저장소 secret은 해당 environment를 사용하는
+릴리스 job에서도 읽을 수 있습니다. 조직 정책상 environment secret을 사용한다면 같은 이름으로
+등록해도 됩니다.
 
 | Secret | 내용 |
 | --- | --- |
@@ -59,6 +60,13 @@ GitHub 웹 설정을 사용하면 값이 터미널 기록에 남지 않습니다
 
 나머지 네 값은 `gh secret set <NAME> --repo j3s30p/AI_Usage`의 비공개 입력 프롬프트나 GitHub 웹
 설정으로 등록합니다. secret 값은 워크플로 로그로 출력하지 않습니다.
+
+태그를 만들기 전에 등록된 이름을 확인하고 위 표의 여섯 이름과 대조합니다. 이 명령은 값은
+출력하지 않습니다.
+
+```bash
+gh secret list --repo j3s30p/AI_Usage --json name --jq '.[].name' | sort
+```
 
 ## 새 버전 준비
 
