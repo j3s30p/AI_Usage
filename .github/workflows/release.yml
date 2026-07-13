@@ -94,22 +94,22 @@ jobs:
       - name: Import Developer ID certificate and notary key
         shell: bash
         env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_BASE64: ${{ secrets.APPLE_NOTARY_KEY_BASE64 }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
 
           required_secrets=(
-            APPLE_CERTIFICATE_BASE64
+            APPLE_CERTIFICATE_P12_BASE64
             APPLE_CERTIFICATE_PASSWORD
             APPLE_TEAM_ID
-            APPLE_NOTARY_KEY_BASE64
-            APPLE_NOTARY_KEY_ID
-            APPLE_NOTARY_ISSUER_ID
+            APPLE_API_KEY_P8_BASE64
+            APPLE_API_KEY_ID
+            APPLE_API_ISSUER_ID
           )
           for name in "${required_secrets[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -124,9 +124,9 @@ jobs:
           keychain_password="$(openssl rand -base64 32)"
           echo "::add-mask::$keychain_password"
 
-          printf '%s' "$APPLE_CERTIFICATE_BASE64" \
+          printf '%s' "$APPLE_CERTIFICATE_P12_BASE64" \
             | /usr/bin/base64 --decode > "$certificate_path"
-          printf '%s' "$APPLE_NOTARY_KEY_BASE64" \
+          printf '%s' "$APPLE_API_KEY_P8_BASE64" \
             | /usr/bin/base64 --decode > "$notary_key_path"
           chmod 600 "$certificate_path" "$notary_key_path"
 
@@ -229,8 +229,8 @@ jobs:
       - name: Notarize and staple app
         shell: bash
         env:
-          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
-          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
           set -euo pipefail
 
@@ -242,8 +242,8 @@ jobs:
           submit_exit=0
           xcrun notarytool submit "$notary_archive" \
             --key "$NOTARY_KEY_PATH" \
-            --key-id "$APPLE_NOTARY_KEY_ID" \
-            --issuer "$APPLE_NOTARY_ISSUER_ID" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
             --wait \
             --timeout 60m \
             --output-format json > "$response" || submit_exit=$?
@@ -253,8 +253,8 @@ jobs:
           if [[ -n "$submission_id" ]]; then
             xcrun notarytool log "$submission_id" "$log" \
               --key "$NOTARY_KEY_PATH" \
-              --key-id "$APPLE_NOTARY_KEY_ID" \
-              --issuer "$APPLE_NOTARY_ISSUER_ID" || true
+              --key-id "$APPLE_API_KEY_ID" \
+              --issuer "$APPLE_API_ISSUER_ID" || true
           fi
           if [[ -s "$log" ]]; then
             issue_count="$(jq '[.issues[]?] | length' "$log")"

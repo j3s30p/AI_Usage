@@ -27,34 +27,38 @@ security find-identity -v -p codesigning
 
 ZIP으로 `.app`을 배포하므로 `Developer ID Installer` 인증서는 필요하지 않습니다.
 
-## GitHub release environment
+## GitHub Actions 자격 증명과 release environment
 
 저장소에 `release` environment를 만들고 가능하면 required reviewer와 `v*` 태그 배포 제한을
 설정합니다. 별도의 tag ruleset으로 `v*` 태그 생성, 삭제와 강제 갱신 권한도 제한합니다.
 
-`release` environment에 다음 여섯 값을 Actions secret으로 등록합니다.
+현재 `release` environment의 deployment branch policy는 `v*` 태그만 허용합니다.
+
+다음 여섯 값을 저장소의 Actions secret으로 등록합니다. `release` environment는 배포 승인과
+태그 보호에 사용하며, 저장소 secret은 해당 environment를 사용하는 릴리스 job에서도 읽을 수
+있습니다. 조직 정책상 environment secret을 사용한다면 같은 이름으로 등록해도 됩니다.
 
 | Secret | 내용 |
 | --- | --- |
-| `APPLE_CERTIFICATE_BASE64` | Developer ID Application `.p12`의 Base64 |
+| `APPLE_CERTIFICATE_P12_BASE64` | Developer ID Application `.p12`의 Base64 |
 | `APPLE_CERTIFICATE_PASSWORD` | `.p12` 내보내기 암호 |
 | `APPLE_TEAM_ID` | 인증서의 Apple Developer Team ID |
-| `APPLE_NOTARY_KEY_BASE64` | App Store Connect Team API `.p8`의 Base64 |
-| `APPLE_NOTARY_KEY_ID` | Team API Key ID |
-| `APPLE_NOTARY_ISSUER_ID` | Team API Issuer ID |
+| `APPLE_API_KEY_P8_BASE64` | App Store Connect Team API `.p8`의 Base64 |
+| `APPLE_API_KEY_ID` | Team API Key ID |
+| `APPLE_API_ISSUER_ID` | Team API Issuer ID |
 
 GitHub 웹 설정을 사용하면 값이 터미널 기록에 남지 않습니다. GitHub CLI를 사용할 때도 private
 파일의 Base64를 화면에 출력하지 말고 표준 입력으로 바로 전달합니다.
 
 ```bash
 /usr/bin/base64 -i DeveloperIDApplication.p12 \
-  | gh secret set APPLE_CERTIFICATE_BASE64 --env release
+  | gh secret set APPLE_CERTIFICATE_P12_BASE64 --repo j3s30p/AI_Usage
 /usr/bin/base64 -i AuthKey.p8 \
-  | gh secret set APPLE_NOTARY_KEY_BASE64 --env release
+  | gh secret set APPLE_API_KEY_P8_BASE64 --repo j3s30p/AI_Usage
 ```
 
-나머지 네 값은 `gh secret set <NAME> --env release`의 비공개 입력 프롬프트나 GitHub 웹 설정으로
-등록합니다. secret 값은 워크플로 로그로 출력하지 않습니다.
+나머지 네 값은 `gh secret set <NAME> --repo j3s30p/AI_Usage`의 비공개 입력 프롬프트나 GitHub 웹
+설정으로 등록합니다. secret 값은 워크플로 로그로 출력하지 않습니다.
 
 ## 새 버전 준비
 
