@@ -29,6 +29,9 @@ struct MenuBarStatusRendering {
 
 @MainActor
 enum MenuBarStatusImageRenderer {
+    static let unavailableSymbolName = "personalhotspot.slash"
+    static let unavailableFallbackSymbolName = "personalhotspot"
+
     private static let canvasHeight: CGFloat = 18
     private static let logoSize: CGFloat = 14
     private static let ringSize: CGFloat = 12
@@ -89,7 +92,7 @@ enum MenuBarStatusImageRenderer {
                 drawRing(in: ringRect, remainingFraction: segment.remainingFraction)
                 x += ringSize
 
-                if let percentageText = segment.percentageText {
+                if let percentageText = displayedPercentageText(for: segment) {
                     x += itemSpacing
                     let percentageSize = textSize(percentageText, attributes: attributes)
                     drawText(
@@ -125,7 +128,7 @@ enum MenuBarStatusImageRenderer {
                 + itemSpacing
             let centerX = x + ringSize / 2
             x += ringSize
-            if let percentageText = segment.percentageText {
+            if let percentageText = displayedPercentageText(for: segment) {
                 x += itemSpacing + textSize(percentageText, attributes: attributes).width
             }
             return centerX
@@ -141,7 +144,7 @@ enum MenuBarStatusImageRenderer {
             + dotSize
             + itemSpacing
             + ringSize
-        if let percentageText = segment.percentageText {
+        if let percentageText = displayedPercentageText(for: segment) {
             width += itemSpacing + textSize(percentageText, attributes: attributes).width
         }
         return width
@@ -149,6 +152,13 @@ enum MenuBarStatusImageRenderer {
 
     private static var providerSeparatorTotalWidth: CGFloat {
         providerSeparatorPadding * 2 + providerSeparatorWidth
+    }
+
+    private static func displayedPercentageText(
+        for segment: MenuBarStatusSegment
+    ) -> String? {
+        guard segment.remainingFraction != nil else { return nil }
+        return segment.percentageText
     }
 
     private static func providerMarkWidth(
@@ -257,13 +267,7 @@ enum MenuBarStatusImageRenderer {
         let radius = (min(rect.width, rect.height) - ringLineWidth) / 2
 
         guard let remainingFraction else {
-            let unknown = fullCircle(center: center, radius: radius)
-            unknown.lineWidth = ringLineWidth
-            unknown.lineCapStyle = .round
-            var dash: [CGFloat] = [1.2, 2]
-            unknown.setLineDash(&dash, count: dash.count, phase: 0)
-            NSColor.white.withAlphaComponent(0.72).setStroke()
-            unknown.stroke()
+            drawUnavailableSymbol(in: rect)
             return
         }
 
@@ -288,6 +292,72 @@ enum MenuBarStatusImageRenderer {
         foreground.lineCapStyle = .round
         NSColor.white.setStroke()
         foreground.stroke()
+    }
+
+    private static func drawUnavailableSymbol(in rect: NSRect) {
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: ringSize,
+            weight: .regular
+        )
+        guard let selection = unavailableSymbolSelection(loading: { name in
+            NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        }),
+              let symbol = selection.image.withSymbolConfiguration(configuration),
+              symbol.size.width > 0,
+              symbol.size.height > 0
+        else {
+            drawUnavailableSlash(in: rect)
+            return
+        }
+
+        let scale = min(
+            rect.width / symbol.size.width,
+            rect.height / symbol.size.height
+        )
+        let size = NSSize(
+            width: symbol.size.width * scale,
+            height: symbol.size.height * scale
+        )
+        let target = NSRect(
+            x: rect.midX - size.width / 2,
+            y: rect.midY - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        symbol.draw(
+            in: target,
+            from: .zero,
+            operation: .sourceOver,
+            fraction: 0.78,
+            respectFlipped: true,
+            hints: [.interpolation: NSImageInterpolation.high]
+        )
+        if selection.requiresManualSlash {
+            drawUnavailableSlash(in: rect)
+        }
+    }
+
+    static func unavailableSymbolSelection(
+        loading load: (String) -> NSImage?
+    ) -> (image: NSImage, symbolName: String, requiresManualSlash: Bool)? {
+        if let symbol = load(unavailableSymbolName) {
+            return (symbol, unavailableSymbolName, false)
+        }
+        if let symbol = load(unavailableFallbackSymbolName) {
+            return (symbol, unavailableFallbackSymbolName, true)
+        }
+        return nil
+    }
+
+    private static func drawUnavailableSlash(in rect: NSRect) {
+        let inset: CGFloat = 1.5
+        let slash = NSBezierPath()
+        slash.move(to: NSPoint(x: rect.minX + inset, y: rect.maxY - inset))
+        slash.line(to: NSPoint(x: rect.maxX - inset, y: rect.minY + inset))
+        slash.lineWidth = ringLineWidth
+        slash.lineCapStyle = .round
+        NSColor.white.withAlphaComponent(0.78).setStroke()
+        slash.stroke()
     }
 
     private static func fullCircle(center: NSPoint, radius: CGFloat) -> NSBezierPath {

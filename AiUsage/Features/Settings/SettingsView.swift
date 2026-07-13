@@ -5,6 +5,7 @@ struct SettingsView: View {
         @MainActor @Sendable () async -> ClaudeOAuthUserInitiatedAccessResult
 
     @Bindable var preferences: AppPreferences
+    @Bindable var launchAtLoginController: LaunchAtLoginController
     @Bindable var statusLineModel: ClaudeStatusLineSettingsModel
 
     private let onAuthorizeClaudeOAuth: ClaudeOAuthAuthorizationAction
@@ -15,10 +16,12 @@ struct SettingsView: View {
 
     init(
         preferences: AppPreferences,
+        launchAtLoginController: LaunchAtLoginController,
         statusLineModel: ClaudeStatusLineSettingsModel,
         onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction
     ) {
         self.preferences = preferences
+        self.launchAtLoginController = launchAtLoginController
         self.statusLineModel = statusLineModel
         self.onAuthorizeClaudeOAuth = onAuthorizeClaudeOAuth
         _selectedClaudeUsageMode = State(
@@ -28,7 +31,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            LaunchAtLoginSection()
+            LaunchAtLoginSection(controller: launchAtLoginController)
 
             Section("메뉴바에 표시") {
                 Toggle("Codex", isOn: $preferences.showCodex)

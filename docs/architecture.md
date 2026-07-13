@@ -27,8 +27,9 @@ AppPreferences → AppDelegate → AppModel → UsageRepository
 OAuth 값이 새 statusLine 결과를 가리지 않게 합니다.
 
 로그인 시 자동 실행 구현은 별도 도우미나 셸 스크립트 없이 `SMAppService.mainApp`을 사용합니다.
-다만 현재 unsigned preview에서는 안정적인 코드 정체성을 보장할 수 없어 설정 토글을 비활성화합니다.
-Developer ID 서명과 Apple 공증을 적용한 배포부터 시스템 상태 확인과 등록 기능을 활성화할 예정입니다.
+사용자가 설정 토글을 직접 켜거나 끌 때만 등록 상태를 변경하고, 앱이 활성화될 때 시스템 상태를
+다시 확인합니다. macOS의 추가 승인이 필요하면 설정 화면에서 로그인 항목 설정으로 이동할 수
+있습니다.
 
 ## Codex
 
@@ -104,12 +105,17 @@ API에 의존합니다. AiUsage는 브라우저 쿠키나 Claude Desktop 내부 
 
 ## Keychain과 코드 서명
 
-현재 프리뷰와 로컬 개발 빌드는 ad-hoc 서명입니다. Homebrew로 파일을 설치할 수는 있지만
-Apple 공증 전이므로 첫 실행을 시도한 뒤 `시스템 설정 → 개인정보 보호 및 보안 → 확인 없이 열기`를
-사용자가 직접 승인해야 할 수 있습니다. OAuth Keychain 실험 모드에서는 앱을 다시 빌드해 코드
-서명이 달라질 때 macOS가 접근 승인을 다시 요구할 수도 있습니다. 고정된 Developer ID로 서명하고
-공증하면 앱의 코드 정체성과 승인 경험은 안정되지만, 사용자가 OAuth 모드를 선택할 때 필요한 최초
-승인 자체를 없애지는 않습니다.
+`v1.0.0`부터 GitHub Release와 Homebrew 배포 앱은 Developer ID Application으로 서명하고
+Hardened Runtime과 secure timestamp를 적용한 뒤 Apple 공증을 거칩니다. 공증된 앱 자체에
+티켓을 staple한 다음 최종 ZIP을 다시 생성하므로 네트워크가 없는 환경에서도 Gatekeeper가 배포
+상태를 확인할 수 있습니다.
+
+고정된 Developer ID 서명은 앱의 코드 정체성과 Keychain 승인 경험을 안정시킵니다. 다만 사용자가
+OAuth 모드를 직접 선택할 때 필요한 최초 Keychain 승인은 그대로 유지됩니다. 로컬 개발 빌드는
+ad-hoc 서명이므로 배포 앱과 다른 코드 정체성으로 취급될 수 있고, Keychain 재승인이나 로그인 항목
+사용 불가 상태가 나타날 수 있습니다.
+
+서명, 공증, 검증과 Homebrew 갱신 순서는 [유지보수자 릴리스 절차](releasing.md)에 정리합니다.
 
 ## 저장하거나 기록하지 않는 정보
 
