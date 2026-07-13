@@ -198,11 +198,14 @@ final class AppModel {
     ) -> Bool {
         guard provider == .codex else { return false }
 
-        if isRegressiveActiveWindow(
-            previous: previous.fiveHour,
-            candidate: candidate.fiveHour,
-            at: candidate.fetchedAt
-        ) {
+        if let previousFiveHour = previous.fiveHour,
+            let candidateFiveHour = candidate.fiveHour,
+            isRegressiveActiveWindow(
+                previous: previousFiveHour,
+                candidate: candidateFiveHour,
+                at: candidate.fetchedAt
+            )
+        {
             return true
         }
 

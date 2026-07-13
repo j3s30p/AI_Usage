@@ -76,10 +76,10 @@ gh secret list --repo j3s30p/AI_Usage --json name --jq '.[].name' | sort
 4. 전체 테스트와 유니버설 Release 빌드를 확인합니다.
 5. PR을 `main`에 병합하고 로컬 `main`을 최신 상태로 동기화합니다.
 
-`v1.0.0`의 프로젝트 값은 다음과 같습니다.
+현재 `v1.0.1`의 프로젝트 값은 다음과 같습니다.
 
-- `MARKETING_VERSION = 1.0.0`
-- `CURRENT_PROJECT_VERSION = 3`
+- `MARKETING_VERSION = 1.0.1`
+- `CURRENT_PROJECT_VERSION = 4`
 
 ## 태그와 GitHub Release
 
@@ -89,8 +89,8 @@ gh secret list --repo j3s30p/AI_Usage --json name --jq '.[].name' | sort
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-git tag -a v1.0.0 -m "AiUsage v1.0.0"
-git push origin v1.0.0
+git tag -a v1.0.1 -m "AiUsage v1.0.1"
+git push origin v1.0.1
 ```
 
 태그 push가 `.github/workflows/release.yml`을 실행합니다. 워크플로는 다음 순서를 강제합니다.
@@ -116,7 +116,7 @@ git push origin v1.0.0
 GitHub Release에서 ZIP을 새 디렉터리에 받아 다음 검증을 다시 수행합니다.
 
 ```bash
-ditto -x -k AiUsage-v1.0.0-macos-universal.zip verify
+ditto -x -k AiUsage-v1.0.1-macos-universal.zip verify
 codesign --verify --deep --strict --verbose=2 verify/AiUsage.app
 spctl --assess --type execute --verbose=4 verify/AiUsage.app
 xcrun stapler validate verify/AiUsage.app

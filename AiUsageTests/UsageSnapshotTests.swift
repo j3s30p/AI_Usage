@@ -64,6 +64,36 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.weekly?.resetAt, date.addingTimeInterval(7_200))
     }
 
+    func testMenuBarWindowPrefersFiveHourAndFallsBackToWeekly() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let fiveHour = UsageLimitWindow(
+            remainingFraction: 0.4,
+            resetAt: now.addingTimeInterval(3_600)
+        )
+        let weekly = UsageLimitWindow(
+            remainingFraction: 0.8,
+            resetAt: now.addingTimeInterval(7 * 24 * 3_600)
+        )
+        let both = UsageSnapshot(
+            provider: .codex,
+            fiveHour: fiveHour,
+            weekly: weekly,
+            fetchedAt: now
+        )
+        let weeklyOnly = UsageSnapshot(
+            provider: .codex,
+            fiveHour: nil,
+            weekly: weekly,
+            fetchedAt: now
+        )
+
+        XCTAssertEqual(both.menuBarWindow, fiveHour)
+        XCTAssertEqual(both.remainingPercentage, 40)
+        XCTAssertEqual(weeklyOnly.menuBarWindow, weekly)
+        XCTAssertEqual(weeklyOnly.remainingPercentage, 80)
+        XCTAssertTrue(weeklyOnly.isCurrent(at: now, maximumAge: 900))
+    }
+
     func testCurrentSnapshotRequiresFutureResetAndFreshCapture() {
         let now = Date(timeIntervalSince1970: 10_000)
         let fresh = UsageSnapshot(

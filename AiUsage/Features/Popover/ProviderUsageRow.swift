@@ -46,22 +46,16 @@ struct ProviderUsageRow: View {
 
             if let snapshot = state.snapshot {
                 VStack(alignment: .leading, spacing: 10) {
-                    usageWindowRow(title: "5시간", window: snapshot.fiveHour)
+                    if let fiveHour = snapshot.fiveHour {
+                        usageWindowRow(title: "5시간", window: fiveHour)
+                    } else {
+                        unavailableWindowRow(title: "5시간")
+                    }
 
                     if let weekly = snapshot.weekly {
                         usageWindowRow(title: "주간", window: weekly)
                     } else {
-                        HStack(spacing: 10) {
-                            Text("주간")
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .frame(width: 38, alignment: .leading)
-
-                            Text("제공되지 않음")
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                        }
-                        .accessibilityElement(children: .combine)
+                        unavailableWindowRow(title: "주간")
                     }
                 }
             } else if !state.isLoading {
@@ -112,5 +106,20 @@ struct ProviderUsageRow: View {
         .accessibilityLabel(
             "\(title), \(window.remainingPercentage)% 남음, 초기화 \(resetText)"
         )
+    }
+
+    private func unavailableWindowRow(title: String) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 38, alignment: .leading)
+
+            Text("제공되지 않음")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(title), 제공되지 않음")
     }
 }
