@@ -321,22 +321,20 @@ final class AppModelTests: XCTestCase {
         await monitorTask.value
     }
 
-    func testMonitorRetainsCodexSnapshotWhenActiveWeeklyWindowRegresses() async {
+    func testMonitorRetainsCodexWeeklyOnlySnapshotWhenActiveWindowRegresses() async {
         let now = Date(timeIntervalSince1970: 45_000)
-        let current = makeSnapshot(
+        let current = UsageSnapshot(
             provider: .codex,
-            remainingFraction: 0.77,
-            resetAt: now.addingTimeInterval(4 * 3_600),
+            fiveHour: nil,
             weekly: UsageLimitWindow(
                 remainingFraction: 0.96,
                 resetAt: now.addingTimeInterval(7 * 24 * 3_600)
             ),
             fetchedAt: now
         )
-        let regressive = makeSnapshot(
+        let regressive = UsageSnapshot(
             provider: .codex,
-            remainingFraction: 0.76,
-            resetAt: current.resetAt,
+            fiveHour: nil,
             weekly: UsageLimitWindow(
                 remainingFraction: 0.99,
                 resetAt: now.addingTimeInterval(6 * 24 * 3_600)

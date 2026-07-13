@@ -631,32 +631,32 @@ final actor CodexUsageProvider: UsageFetching {
         }
 
         let windows = selectedRateLimits.windows
-        guard let fiveHourWindow = windows.first(where: {
+        let fiveHour = windows.first(where: {
             $0.windowDurationMins == 300
-        }),
-            let fiveHourResetTimestamp = fiveHourWindow.resetsAt
-        else {
-            throw UsageServiceError.currentWindowUnavailable("Codex")
-        }
-
+        }).flatMap(makeWindow)
         let weekly = windows.first(where: {
             $0.windowDurationMins == 10_080
-        }).flatMap { window -> UsageLimitWindow? in
-            guard let resetTimestamp = window.resetsAt else { return nil }
-            return UsageLimitWindow(
-                remainingFraction: 1 - (window.usedPercent / 100),
-                resetAt: Date(timeIntervalSince1970: TimeInterval(resetTimestamp))
-            )
+        }).flatMap(makeWindow)
+
+        guard fiveHour != nil || weekly != nil else {
+            throw UsageServiceError.currentWindowUnavailable("Codex")
         }
 
         return UsageSnapshot(
             provider: .codex,
-            remainingFraction: 1 - (fiveHourWindow.usedPercent / 100),
-            resetAt: Date(
-                timeIntervalSince1970: TimeInterval(fiveHourResetTimestamp)
-            ),
+            fiveHour: fiveHour,
             weekly: weekly,
             fetchedAt: fetchedAt
+        )
+    }
+
+    nonisolated private static func makeWindow(
+        _ window: CodexRateLimitsResponse.Window
+    ) -> UsageLimitWindow? {
+        guard let resetTimestamp = window.resetsAt else { return nil }
+        return UsageLimitWindow(
+            remainingFraction: 1 - (window.usedPercent / 100),
+            resetAt: Date(timeIntervalSince1970: TimeInterval(resetTimestamp))
         )
     }
 }

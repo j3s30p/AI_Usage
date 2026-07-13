@@ -103,26 +103,15 @@ struct ClaudeUsageProvider: UsageFetching {
         from response: ClaudeOAuthUsageResponse,
         fetchedAt: Date = .now
     ) throws -> UsageSnapshot {
-        guard let fiveHour = response.fiveHour,
-              let resetAt = fiveHour.resetsAt,
-              fiveHour.utilization.isFinite
-        else {
+        let fiveHour = response.fiveHour.flatMap(makeWindow)
+        let weekly = response.sevenDay.flatMap(makeWindow)
+        guard fiveHour != nil || weekly != nil else {
             throw UsageServiceError.currentWindowUnavailable("Claude")
         }
 
-        let weekly = response.sevenDay.flatMap { window -> UsageLimitWindow? in
-            guard window.utilization.isFinite, let resetAt = window.resetsAt else {
-                return nil
-            }
-            return makeWindow(
-                usedPercentage: window.utilization,
-                resetAt: resetAt
-            )
-        }
         return UsageSnapshot(
             provider: .claude,
-            remainingFraction: remainingFraction(for: fiveHour.utilization),
-            resetAt: resetAt,
+            fiveHour: fiveHour,
             weekly: weekly,
             fetchedAt: fetchedAt
         )
@@ -143,17 +132,15 @@ struct ClaudeUsageProvider: UsageFetching {
             }
         }
 
-        guard let currentWindow = response.rateLimits?.fiveHour,
-              let fiveHour = makeWindow(from: currentWindow)
-        else {
+        let fiveHour = response.rateLimits?.fiveHour.flatMap(makeWindow)
+        let weekly = response.rateLimits?.sevenDay.flatMap(makeWindow)
+        guard fiveHour != nil || weekly != nil else {
             throw UsageServiceError.currentWindowUnavailable("Claude")
         }
 
-        let weekly = response.rateLimits?.sevenDay.flatMap(makeWindow)
         return UsageSnapshot(
             provider: .claude,
-            remainingFraction: fiveHour.remainingFraction,
-            resetAt: fiveHour.resetAt,
+            fiveHour: fiveHour,
             weekly: weekly,
             fetchedAt: fetchedAt
         )
@@ -162,6 +149,18 @@ struct ClaudeUsageProvider: UsageFetching {
     private static let defaultCacheURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude", isDirectory: true)
         .appendingPathComponent("usage-cache.json", isDirectory: false)
+
+    private static func makeWindow(
+        from window: ClaudeOAuthUsageWindow
+    ) -> UsageLimitWindow? {
+        guard window.utilization.isFinite, let resetAt = window.resetsAt else {
+            return nil
+        }
+        return makeWindow(
+            usedPercentage: window.utilization,
+            resetAt: resetAt
+        )
+    }
 
     private static func makeWindow(
         from window: ClaudeUsageResponse.Window

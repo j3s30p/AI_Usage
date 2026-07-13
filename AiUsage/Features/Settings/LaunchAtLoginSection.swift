@@ -16,9 +16,7 @@ struct LaunchAtLoginSection: View {
                     }
                 )
             )
-            .disabled(
-                controller.isWorking || controller.state == .unavailable
-            )
+            .disabled(controller.isWorking)
             .accessibilityHint(
                 "Mac에 로그인할 때 AiUsage를 자동으로 실행합니다."
             )

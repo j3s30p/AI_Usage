@@ -38,25 +38,50 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.fetchedAt, fetchedAt)
     }
 
-    func testCodexRejectsWeeklyOnlyResponse() throws {
+    func testCodexParsesCurrentWeeklyOnlyMultiLimitResponse() throws {
         let data = Data(
             """
             {
               "rateLimits": {
+                "limitId": "codex",
                 "primary": {
-                  "usedPercent": 8,
+                  "usedPercent": 3,
                   "windowDurationMins": 10080,
-                  "resetsAt": 1784250938
+                  "resetsAt": 1784506240
                 },
                 "secondary": null
               },
-              "rateLimitsByLimitId": null
+              "rateLimitsByLimitId": {
+                "codex": {
+                  "limitId": "codex",
+                  "primary": {
+                    "usedPercent": 3,
+                    "windowDurationMins": 10080,
+                    "resetsAt": 1784506240
+                  },
+                  "secondary": null
+                },
+                "codex_bengalfox": {
+                  "limitId": "codex_bengalfox",
+                  "primary": {
+                    "usedPercent": 0,
+                    "windowDurationMins": 10080,
+                    "resetsAt": 1784508713
+                  },
+                  "secondary": null
+                }
+              }
             }
             """.utf8
         )
 
         let response = try JSONDecoder().decode(CodexRateLimitsResponse.self, from: data)
-        XCTAssertThrowsError(try CodexUsageProvider.makeSnapshot(from: response))
+        let snapshot = try CodexUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 97)
+        XCTAssertEqual(snapshot.menuBarWindow.remainingPercentage, 97)
+        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_784_506_240)
     }
 
     func testCodexAllowsMissingWeeklyWindow() throws {
@@ -302,6 +327,24 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.fetchedAt.timeIntervalSince1970, 200)
     }
 
+    func testClaudeParsesStatusLineWeeklyOnlyWindow() throws {
+        let response = ClaudeUsageResponse(
+            rateLimits: .init(
+                fiveHour: nil,
+                sevenDay: .init(
+                    usedPercentage: 18,
+                    resetsAt: 1_784_506_240
+                )
+            )
+        )
+
+        let snapshot = try ClaudeUsageProvider.makeSnapshot(from: response)
+
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 82)
+        XCTAssertEqual(snapshot.menuBarWindow.remainingPercentage, 82)
+    }
+
     func testClaudeDefaultStatusLineModeInvokesNoActiveSource() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let cache = try makeValidClaudeCache(capturedAt: now)
@@ -351,6 +394,20 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(oauthCalls.value, 1)
     }
 
+    func testClaudeOAuthParsesWeeklyOnlyWindow() throws {
+        let resetAt = Date(timeIntervalSince1970: 1_784_506_240)
+        let snapshot = try ClaudeUsageProvider.makeSnapshot(
+            from: ClaudeOAuthUsageResponse(
+                fiveHour: nil,
+                sevenDay: .init(utilization: 18, resetsAt: resetAt)
+            )
+        )
+
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 82)
+        XCTAssertEqual(snapshot.menuBarWindow.resetAt, resetAt)
+    }
+
     func testClaudeOAuthModeFallsBackOnlyToStatusLine() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let cache = try makeValidClaudeCache(capturedAt: now)
@@ -368,7 +425,7 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.remainingPercentage, 75)
     }
 
-    func testClaudeOAuthRequiresFiveHourResetAndClampsUtilization() throws {
+    func testClaudeOAuthRequiresUsableWindowAndClampsUtilization() throws {
         XCTAssertThrowsError(
             try ClaudeUsageProvider.makeSnapshot(
                 from: ClaudeOAuthUsageResponse(

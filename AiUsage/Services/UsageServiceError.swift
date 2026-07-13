@@ -29,7 +29,7 @@ enum UsageServiceError: LocalizedError, Sendable {
         case .invalidResponse(let name):
             "\(name) 사용량 응답을 읽을 수 없습니다."
         case .currentWindowUnavailable(let name):
-            "\(name)의 현재 5시간 사용량을 찾지 못했습니다."
+            "\(name)의 사용 가능한 사용량 한도를 찾지 못했습니다."
         case .usageCacheUnavailable(let name):
             "\(name) statusLine 캐시가 없습니다. Claude Code를 다시 시작하고 메시지를 보낸 뒤 새로 고침해 주세요."
         case .usageCacheWaiting:

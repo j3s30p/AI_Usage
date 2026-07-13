@@ -77,15 +77,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let now = Date.now
         let segments = providers.map { provider in
             let snapshot = menuBarSnapshot(for: provider, at: now)
+            let window = snapshot?.menuBarWindow
             return MenuBarStatusSegment(
                 name: provider.displayName,
                 logoAssetName: preferences.providerDisplayMode == .logo
                     ? provider.logoAssetName
                     : nil,
                 logoSourceInsetFraction: provider.logoSourceInsetFraction,
-                remainingFraction: snapshot?.remainingFraction,
+                remainingFraction: window?.remainingFraction,
                 percentageText: preferences.showPercentage
-                    ? snapshot.map { "\($0.remainingPercentage)%" }
+                    ? window.map { "\($0.remainingPercentage)%" }
                     : nil
             )
         }
@@ -98,7 +99,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let accessibilityLabel = providers.map { provider in
             let state = model.state(for: provider)
             if let snapshot = menuBarSnapshot(for: provider, at: now) {
-                return "\(provider.displayName), \(snapshot.remainingPercentage)% 남음"
+                return "\(provider.displayName), \(snapshot.menuBarWindow.remainingPercentage)% 남음"
             }
             if let failure = state.failure {
                 return "\(provider.displayName), \(failure.message)"

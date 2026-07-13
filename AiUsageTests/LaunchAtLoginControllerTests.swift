@@ -29,8 +29,23 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertFalse(unavailable.isEnabled)
         XCTAssertEqual(
             unavailable.message,
-            "로그인 시 실행 상태를 확인할 수 없습니다."
+            "로그인 시 실행 상태를 확인할 수 없습니다. 토글을 켜 다시 등록해 주세요."
         )
+    }
+
+    func testUnavailableStateCanRetryRegistration() async {
+        let service = FakeLaunchAtLoginService(state: .unavailable)
+        service.stateAfterRegister = .enabled
+        let controller = LaunchAtLoginController(service: service)
+
+        await controller.setEnabled(true)
+
+        XCTAssertEqual(service.registerCallCount, 1)
+        XCTAssertEqual(service.unregisterCallCount, 0)
+        XCTAssertEqual(controller.state, .enabled)
+        XCTAssertTrue(controller.isEnabled)
+        XCTAssertFalse(controller.isWorking)
+        XCTAssertNil(controller.message)
     }
 
     func testEnableRegistersAndRefreshesFromService() async {
@@ -105,8 +120,18 @@ final class LaunchAtLoginControllerTests: XCTestCase {
 
     func testRegisterFailureRollsBackToggleAndSanitizesMessage() async {
         let service = FakeLaunchAtLoginService(state: .disabled)
-        service.registerError = SensitiveTestError("secret register detail")
-        let controller = LaunchAtLoginController(service: service)
+        service.registerError = NSError(
+            domain: "SMAppServiceErrorDomain",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "secret register detail"]
+        )
+        var serviceErrors: [LaunchAtLoginController.ServiceErrorMetadata] = []
+        let controller = LaunchAtLoginController(
+            service: service,
+            serviceErrorLogger: { metadata in
+                serviceErrors.append(metadata)
+            }
+        )
 
         await controller.setEnabled(true)
 
@@ -118,12 +143,32 @@ final class LaunchAtLoginControllerTests: XCTestCase {
             "로그인 시 실행을 켜지 못했습니다. 잠시 후 다시 시도해 주세요."
         )
         XCTAssertFalse(controller.message?.contains("secret register detail") == true)
+        XCTAssertEqual(
+            serviceErrors,
+            [
+                LaunchAtLoginController.ServiceErrorMetadata(
+                    operation: .register,
+                    domain: "SMAppServiceErrorDomain",
+                    code: 1
+                ),
+            ]
+        )
     }
 
     func testUnregisterFailureRollsBackToggleAndSanitizesMessage() async {
         let service = FakeLaunchAtLoginService(state: .enabled)
-        service.unregisterError = SensitiveTestError("secret unregister detail")
-        let controller = LaunchAtLoginController(service: service)
+        service.unregisterError = NSError(
+            domain: "SMAppServiceErrorDomain",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "secret unregister detail"]
+        )
+        var serviceErrors: [LaunchAtLoginController.ServiceErrorMetadata] = []
+        let controller = LaunchAtLoginController(
+            service: service,
+            serviceErrorLogger: { metadata in
+                serviceErrors.append(metadata)
+            }
+        )
 
         await controller.setEnabled(false)
 
@@ -135,6 +180,16 @@ final class LaunchAtLoginControllerTests: XCTestCase {
             "로그인 시 실행을 끄지 못했습니다. 잠시 후 다시 시도해 주세요."
         )
         XCTAssertFalse(controller.message?.contains("secret unregister detail") == true)
+        XCTAssertEqual(
+            serviceErrors,
+            [
+                LaunchAtLoginController.ServiceErrorMetadata(
+                    operation: .unregister,
+                    domain: "SMAppServiceErrorDomain",
+                    code: 2
+                ),
+            ]
+        )
     }
 
     func testAlreadyEnabledAndAlreadyDisabledActionsAreIdempotent() async {
@@ -153,15 +208,22 @@ final class LaunchAtLoginControllerTests: XCTestCase {
     }
 
     func testRaceErrorsAreTreatedAsSuccessWhenSystemStateMatchesRequest() async {
+        var serviceErrors: [LaunchAtLoginController.ServiceErrorMetadata] = []
         let registerService = FakeLaunchAtLoginService(state: .disabled)
         registerService.stateBeforeRegisterError = .enabled
         registerService.registerError = SensitiveTestError("already registered")
-        let registerController = LaunchAtLoginController(service: registerService)
+        let registerController = LaunchAtLoginController(
+            service: registerService,
+            serviceErrorLogger: { serviceErrors.append($0) }
+        )
 
         let unregisterService = FakeLaunchAtLoginService(state: .enabled)
         unregisterService.stateBeforeUnregisterError = .disabled
         unregisterService.unregisterError = SensitiveTestError("not registered")
-        let unregisterController = LaunchAtLoginController(service: unregisterService)
+        let unregisterController = LaunchAtLoginController(
+            service: unregisterService,
+            serviceErrorLogger: { serviceErrors.append($0) }
+        )
 
         await registerController.setEnabled(true)
         await unregisterController.setEnabled(false)
@@ -172,6 +234,7 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertEqual(unregisterController.state, .disabled)
         XCTAssertFalse(unregisterController.isEnabled)
         XCTAssertNil(unregisterController.message)
+        XCTAssertTrue(serviceErrors.isEmpty)
     }
 
     func testRefreshReconcilesExternalSystemSettingsChanges() {
