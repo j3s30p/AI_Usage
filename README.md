@@ -19,15 +19,18 @@ Codex · [도넛 링] 23% │ Claude · [도넛 링] 48%
 ## 설치
 
 ```bash
-brew install --cask j3s30p/tap/aiusage
+brew tap j3s30p/tap
+brew install --cask aiusage
 open -a AiUsage
 ```
+
+tap 등록은 최초 한 번만 필요합니다.
 
 기존 설치는 다음 명령으로 최신 버전으로 올릴 수 있습니다.
 
 ```bash
 brew update
-brew upgrade --cask j3s30p/tap/aiusage
+brew upgrade --cask aiusage
 ```
 
 `v1.0.0`부터 Homebrew와 GitHub Release에 배포되는 앱은 Developer ID Application으로 서명하고
