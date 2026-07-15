@@ -5,7 +5,7 @@ This document describes AiUsage's implementation, the Codex and Claude usage sou
 ## Technology
 
 - macOS 14 or later and Swift 6
-- SwiftUI settings and popover views
+- SwiftUI two-tab settings and popover views
 - AppKit `NSStatusItem` menu bar UI
 - Observation-based app state and preferences
 - Foundation `URLSession`, `Process`, and Swift Concurrency

@@ -5,6 +5,7 @@
 "Updates" = "Updates";
 "Check for Updates…" = "Check for Updates…";
 "일반" = "General";
+"메뉴바" = "Menu Bar";
 "로그인 시 AiUsage 자동 실행" = "Launch AiUsage at login";
 "Mac에 로그인할 때 AiUsage를 자동으로 실행합니다." = "Automatically launch AiUsage when you log in to your Mac.";
 "로그인 시 실행 설정 중…" = "Updating launch at login…";
@@ -25,6 +26,7 @@
 "15분" = "15 minutes";
 "30분" = "30 minutes";
 "Claude 조회 방식" = "Claude usage source";
+"Claude 사용량" = "Claude usage";
 "statusLine 캐시 (권장)" = "statusLine cache (recommended)";
 "OAuth Keychain (실험적)" = "OAuth Keychain (experimental)";
 "Claude OAuth 인증 확인 중…" = "Checking Claude OAuth authorization…";
