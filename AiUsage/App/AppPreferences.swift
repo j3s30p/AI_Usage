@@ -16,6 +16,10 @@ final class AppPreferences {
         didSet { defaults.set(showPercentage, forKey: Keys.showPercentage) }
     }
 
+    var colorUsageRings: Bool {
+        didSet { defaults.set(colorUsageRings, forKey: Keys.colorUsageRings) }
+    }
+
     var providerDisplayMode: ProviderDisplayMode {
         didSet { defaults.set(providerDisplayMode.rawValue, forKey: Keys.providerDisplayMode) }
     }
@@ -56,6 +60,11 @@ final class AppPreferences {
         showPercentage = Self.storedBool(
             forKey: Keys.showPercentage,
             defaultValue: true,
+            defaults: defaults
+        )
+        colorUsageRings = Self.storedBool(
+            forKey: Keys.colorUsageRings,
+            defaultValue: false,
             defaults: defaults
         )
         providerDisplayMode = defaults.string(forKey: Keys.providerDisplayMode)
@@ -99,6 +108,7 @@ final class AppPreferences {
         static let showCodex = "showCodex"
         static let showClaude = "showClaude"
         static let showPercentage = "showPercentage"
+        static let colorUsageRings = "colorUsageRings"
         static let providerDisplayMode = "providerDisplayMode"
         static let refreshInterval = "refreshInterval"
         static let claudeUsageMode = "claudeUsageMode"

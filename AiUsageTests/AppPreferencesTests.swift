@@ -14,6 +14,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertTrue(preferences.showCodex)
         XCTAssertTrue(preferences.showClaude)
         XCTAssertTrue(preferences.showPercentage)
+        XCTAssertFalse(preferences.colorUsageRings)
         XCTAssertEqual(preferences.providerDisplayMode, .name)
         XCTAssertEqual(preferences.refreshInterval, .threeMinutes)
         XCTAssertEqual(preferences.claudeUsageMode, .statusLine)
@@ -30,6 +31,7 @@ final class AppPreferencesTests: XCTestCase {
         preferences.showCodex = false
         preferences.showClaude = true
         preferences.showPercentage = false
+        preferences.colorUsageRings = true
         preferences.providerDisplayMode = .logo
         preferences.refreshInterval = .fifteenMinutes
         preferences.claudeUsageMode = .oauth
@@ -39,6 +41,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertFalse(reloaded.showCodex)
         XCTAssertTrue(reloaded.showClaude)
         XCTAssertFalse(reloaded.showPercentage)
+        XCTAssertTrue(reloaded.colorUsageRings)
         XCTAssertEqual(reloaded.providerDisplayMode, .logo)
         XCTAssertEqual(reloaded.refreshInterval, .fifteenMinutes)
         XCTAssertEqual(reloaded.claudeUsageMode, .oauth)

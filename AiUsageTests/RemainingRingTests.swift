@@ -27,4 +27,13 @@ final class RemainingRingTests: XCTestCase {
         XCTAssertTrue(RemainingRing.isDisplayedAsZero(0.004))
         XCTAssertFalse(RemainingRing.isDisplayedAsZero(0.005))
     }
+
+    func testUsageRingColorsFollowDisplayedPercentageThresholds() {
+        XCTAssertEqual(UsageRingColor.color(for: 0), .critical)
+        XCTAssertEqual(UsageRingColor.color(for: 0.054), .critical)
+        XCTAssertEqual(UsageRingColor.color(for: 0.055), .warning)
+        XCTAssertEqual(UsageRingColor.color(for: 0.304), .warning)
+        XCTAssertEqual(UsageRingColor.color(for: 0.305), .healthy)
+        XCTAssertEqual(UsageRingColor.color(for: 1), .healthy)
+    }
 }
