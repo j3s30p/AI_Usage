@@ -1,20 +1,19 @@
-# AiUsage 기술 구조와 데이터 소스
+# AiUsage architecture and data sources
 
-이 문서는 AiUsage의 구현 구조, Codex·Claude 사용량 조회 방식, Keychain과 개인정보 처리 경계를
-설명합니다. 일반적인 설치와 사용법은 프로젝트 루트의 [README](../README.md)를 참고하세요.
+This document describes AiUsage's implementation, the Codex and Claude usage sources, and its Keychain and privacy boundaries. See the project [README](../README.md) for installation and everyday use.
 
-## 기술 스택
+## Technology
 
-- macOS 14 이상, Swift 6
-- SwiftUI 설정 화면과 팝오버
-- AppKit `NSStatusItem` 기반 메뉴바 표시
-- Observation 기반 앱 상태와 설정 전달
-- Foundation `URLSession`, `Process`, Swift Concurrency
-- macOS Security·LocalAuthentication 기반 Keychain 조회
-- ServiceManagement `SMAppService.mainApp` 기반 로그인 시 자동 실행
-- 외부 패키지 의존성 없음
+- macOS 14 or later and Swift 6
+- SwiftUI settings and popover views
+- AppKit `NSStatusItem` menu bar UI
+- Observation-based app state and preferences
+- Foundation `URLSession`, `Process`, and Swift Concurrency
+- macOS Security and LocalAuthentication for Keychain access
+- ServiceManagement `SMAppService.mainApp` for launch at login
+- No third-party packages
 
-주요 흐름은 다음과 같습니다.
+The main data path is:
 
 ```text
 AppPreferences → AppDelegate → AppModel → UsageRepository
@@ -22,40 +21,26 @@ AppPreferences → AppDelegate → AppModel → UsageRepository
                                            └─ ClaudeUsageProvider
 ```
 
-설정값이 바뀌면 기존 모니터를 취소하고 선택한 주기와 Claude 조회 모드로 다시 시작합니다. Claude
-조회 모드가 바뀌면 이전 데이터 소스의 snapshot을 즉시 비워, 더 최신이라는 이유만으로 이전
-OAuth 값이 새 statusLine 결과를 가리지 않게 합니다.
+Changing a preference cancels the current monitor and starts a new one with the selected interval and Claude source. Changing the Claude source clears the previous source's snapshot immediately so an older OAuth result cannot hide a newer statusLine result solely because of its timestamp.
 
-로그인 시 자동 실행 구현은 별도 도우미나 셸 스크립트 없이 `SMAppService.mainApp`을 사용합니다.
-사용자가 설정 토글을 직접 켜거나 끌 때만 등록 상태를 변경하고, 앱이 활성화될 때 시스템 상태를
-다시 확인합니다. macOS의 추가 승인이 필요하면 설정 화면에서 로그인 항목 설정으로 이동할 수
-있습니다.
+Launch at login uses `SMAppService.mainApp` without a helper or shell script. Registration changes only when the user changes the setting. AiUsage refreshes the system state when it becomes active and can open Login Items settings when macOS requires approval.
 
 ## Codex
 
-Codex가 선택되어 있는 동안 로컬 `codex app-server` 연결 하나를 유지합니다. 선택한 주기마다 공식
-`account/rateLimits/read`를 호출해 300분·10,080분 창을 읽고, 연결이 끊기면 백오프로
-재연결합니다.
+AiUsage keeps one local `codex app-server` connection while Codex is enabled. At the selected interval it calls the official `account/rateLimits/read` method, reads the 300-minute and 10,080-minute windows, and reconnects with backoff after a disconnection.
 
-응답에 기본 Codex와 모델별 한도가 함께 있으면 명시적인 `codex` 한도만 사용합니다. 다중 한도
-응답에서 기본 Codex 값이 순간적으로 누락되면 Spark 등 다른 모델의 100% 값을 대신 표시하지 않고
-조회 실패로 처리합니다. 이때 최근 정상값은 설정한 갱신 주기의 허용 시간 안에서 계속 표시됩니다.
+When a response contains both default Codex and model-specific limits, AiUsage uses only the explicit `codex` limit. If the default limit briefly disappears from a multi-limit response, AiUsage reports a fetch failure instead of substituting another model's 100% value. A recent valid value remains visible within the allowed age for the selected refresh interval.
 
-## Claude 조회 모드
+## Claude sources
 
-두 모드는 사용자가 선택하며, OAuth 모드가 실패했을 때만 statusLine 캐시로 폴백합니다. 기본값은
-`statusLine 캐시 (권장)`입니다.
+The user chooses between two sources. AiUsage falls back to statusLine only after OAuth mode fails. The default is `statusLine cache (recommended)`.
 
-### statusLine 캐시 (권장)
+### statusLine cache (recommended)
 
-- `~/.claude/usage-cache.json`만 로컬에서 읽습니다.
-- AiUsage가 Keychain에 접근하거나 로그인·브라우저 절차를 시작하지 않습니다.
-- Claude Code의 공식 [statusLine](https://code.claude.com/docs/en/statusline)이 실행될 때 캐시가
-  갱신됩니다.
-- Claude Code를 사용하지 않거나 Claude Desktop·웹만 사용하면 마지막 값이 유지되므로 완전한
-  실시간 조회 방식은 아닙니다.
-
-데이터 흐름은 다음과 같습니다.
+- Reads only the local `~/.claude/usage-cache.json` file.
+- Does not access Keychain or start a login or browser flow.
+- Refreshes when Claude Code's official [statusLine](https://code.claude.com/docs/en/statusline) runs.
+- May retain the last value when only Claude Desktop or the web app is used.
 
 ```text
 Claude Code → ~/.claude/aiusage/statusline-wrapper.sh
@@ -63,72 +48,49 @@ Claude Code → ~/.claude/aiusage/statusline-wrapper.sh
             → ~/.claude/usage-cache.json → AiUsage
 ```
 
-캐시에는 사용률, 초기화 시각, 캡처 시각만 저장합니다. 세션 ID, 프롬프트, 작업 경로는 저장하지
-않습니다.
+The cache contains utilization, reset times, and capture time only. It does not contain a session ID, prompt, or working directory.
 
-#### 앱 내부 연결
+#### In-app connection
 
-설정의 `Claude statusLine 연결…` 버튼을 누르고 확인창에서 동의하면 다음 작업을 앱이 수행합니다.
+After the user selects **Connect Claude statusLine…** and approves the change, AiUsage:
 
-1. 현재 `~/.claude/settings.json`을 읽고 안전하게 보존할 수 있는 형식인지 확인합니다.
-2. 변경 전 설정을 권한 `0600`의 전용 백업으로 저장합니다.
-3. 앱 번들에 포함된 수집기와 래퍼를 `~/.claude/aiusage/`에 설치합니다.
-4. 다른 Claude 설정은 유지하고 `statusLine.command`만 AiUsage 래퍼로 연결합니다.
+1. Reads `~/.claude/settings.json` and verifies that its format can be preserved safely.
+2. Stores the pre-change configuration in a dedicated `0600` backup.
+3. Installs the bundled collector and wrapper under `~/.claude/aiusage/`.
+4. Preserves other Claude settings and changes only `statusLine.command` to the AiUsage wrapper.
 
-기존 statusLine 명령이 있으면 권한 `0600`의 전용 파일에 보존하고, 래퍼가 같은 JSON 입력을 기존
-명령에도 전달해 기존 표시와 종료 상태를 유지합니다. 연결 해제 시 현재 설정이 AiUsage가 설치한
-값과 정확히 일치할 때만 원래 statusLine을 복원합니다. 손상된 JSON, 알 수 없는 statusLine 형식,
-심볼릭 링크 또는 연결 후 외부 변경이 감지되면 자동으로 덮어쓰지 않습니다.
+If a compatible statusLine command already exists, AiUsage stores it in a dedicated `0600` file and forwards the same JSON input to it, preserving its output and exit status. On disconnect, AiUsage restores the original statusLine only if the current setting exactly matches the installed value. It will not overwrite malformed JSON, an unknown statusLine format, a symbolic link, or a configuration changed externally after connection.
 
-### OAuth Keychain (실험적)
+### OAuth Keychain (experimental)
 
-- `~/.claude/.credentials.json`이 있으면 먼저 확인하고, 없으면 macOS의
-  `Claude Code-credentials` Keychain 항목을 확인합니다.
-- 자동 갱신은 `LAContext.interactionNotAllowed`와 명시적인 Keychain UI-fail 정책을 함께 사용해
-  승인 창을 금지합니다. 이미 접근 가능한 경우에만 자격을 메모리에서 읽습니다.
-- `https://api.anthropic.com/api/oauth/usage` 조회에 실패하거나 Keychain을 조용히 읽을 수 없으면
-  statusLine 캐시만 확인하며 로그인 절차를 시작하지 않습니다.
-- 사용자가 설정에서 OAuth 모드를 직접 선택하거나 현재 OAuth 항목을 다시 선택하면 사용자 동작
-  경계에서 macOS Keychain 승인을 요청합니다. 승인이 성공한 뒤에만 OAuth 모드를 확정하고,
-  취소하거나 실패하면 이전 조회 모드를 유지합니다.
+- Checks `~/.claude/.credentials.json` first, then the `Claude Code-credentials` Keychain item.
+- Background refresh uses `LAContext.interactionNotAllowed` and an explicit no-UI Keychain policy. Credentials are read only when access requires no prompt.
+- If the private `https://api.anthropic.com/api/oauth/usage` request fails or Keychain cannot be read silently, AiUsage checks only the statusLine cache and does not start a login flow.
+- Explicitly selecting OAuth mode is the sole boundary at which AiUsage may request Keychain approval. A cancellation or failure keeps the previous source.
 
-`/api/oauth/usage`는 Anthropic의 공개 API 문서에 포함되지 않은 비공개 호환 경로입니다. 응답
-형식이 바뀌거나 지원이 중단될 수 있으며 공개 배포 앱의 안정적인 계약으로 간주하지 않습니다.
-Anthropic의 현재 [인증·자격증명 정책](https://code.claude.com/docs/en/legal-and-compliance)도 함께
-확인해야 합니다.
+The OAuth usage endpoint is not part of Anthropic's public API contract and may change or disappear. Refer to Anthropic's current [authentication and credential policy](https://code.claude.com/docs/en/legal-and-compliance).
 
-## Claude Desktop·웹
+## Claude Desktop and web
 
-Claude Desktop과 claude.ai 웹은 AiUsage의 statusLine 캐시를 직접 갱신하지 않습니다. OAuth
-실험 모드는 호환되는 Claude Code 자격을 읽을 수 있을 때 계정 사용량을 반영할 수 있지만 비공개
-API에 의존합니다. AiUsage는 브라우저 쿠키나 Claude Desktop 내부 저장소를 읽지 않습니다.
+Claude Desktop and claude.ai do not update the AiUsage statusLine cache. Experimental OAuth mode may reflect account usage when compatible Claude Code credentials are available. AiUsage does not read browser cookies or Claude Desktop's internal storage.
 
-## Keychain과 코드 서명
+## Keychain and code signing
 
-`v1.0.0`부터 GitHub Release와 Homebrew 배포 앱은 Developer ID Application으로 서명하고
-Hardened Runtime과 secure timestamp를 적용한 뒤 Apple 공증을 거칩니다. 공증된 앱 자체에
-티켓을 staple한 다음 최종 ZIP을 다시 생성하므로 네트워크가 없는 환경에서도 Gatekeeper가 배포
-상태를 확인할 수 있습니다.
+Starting with `v1.0.0`, GitHub Release and Homebrew builds are signed with Developer ID Application, use Hardened Runtime and a secure timestamp, and are notarized by Apple. The notarization ticket is stapled to the app before the final ZIP is created, allowing Gatekeeper to verify distribution state while offline.
 
-고정된 Developer ID 서명은 앱의 코드 정체성과 Keychain 승인 경험을 안정시킵니다. 다만 사용자가
-OAuth 모드를 직접 선택할 때 필요한 최초 Keychain 승인은 그대로 유지됩니다. 로컬 개발 빌드는
-ad-hoc 서명이므로 배포 앱과 다른 코드 정체성으로 취급될 수 있고, Keychain 재승인이나 로그인 항목
-사용 불가 상태가 나타날 수 있습니다.
+A stable Developer ID identity improves Keychain approval continuity. Explicit first-time approval may still be required for OAuth mode. Local development builds use ad-hoc signing and may be treated as another identity, causing renewed Keychain approval or unavailable launch-at-login registration.
 
-서명, 공증, 검증과 Homebrew 갱신 순서는 [유지보수자 릴리스 절차](releasing.md)에 정리합니다.
+See the [maintainer release process](releasing.md) for signing, notarization, verification, and Homebrew publication.
 
-## 저장하거나 기록하지 않는 정보
+## Stored and excluded data
 
-AiUsage가 저장하는 앱 설정은 다음뿐입니다.
+App preferences contain only:
 
-- 서비스 표시 여부
-- 이름·로고와 퍼센트 표시 방식
-- 갱신 주기
-- Claude 조회 모드
+- Enabled providers
+- Name or logo display and percentage visibility
+- Refresh interval
+- Claude usage source
 
-statusLine 연결에 동의한 경우 `~/.claude/aiusage/`에는 연결용 스크립트, 연결 메타데이터, 변경 전
-설정 백업과 기존 statusLine 명령을 저장합니다. 이 파일은 기존 표시 보존과 정확한 연결 해제에만
-사용하며 권한을 `0600` 또는 `0700`으로 제한합니다.
+After statusLine connection is approved, `~/.claude/aiusage/` contains connection scripts, metadata, the pre-change backup, and any existing statusLine command. These files are used only for preservation and exact disconnection and use `0600` or `0700` permissions.
 
-계정 이메일, 세션 ID, 프롬프트, 작업 경로, OAuth 토큰과 서버 오류 본문은 앱 설정이나
-로그에 저장하지 않습니다. OAuth 자격은 요청을 만드는 동안 메모리에서만 사용합니다.
+AiUsage does not store account email addresses, session IDs, prompts, working directories, OAuth tokens, or server error bodies in app settings or logs. OAuth credentials remain in memory only while a request is created.
