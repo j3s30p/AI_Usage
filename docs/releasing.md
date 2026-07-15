@@ -61,10 +61,10 @@ gh secret list --repo j3s30p/AI_Usage --json name --jq '.[].name' | sort
 4. Run the complete test suite and verify a universal Release build.
 5. Merge the pull request and synchronize local `main`.
 
-The current `v1.0.1` project values are:
+The current `v1.1.0` project values are:
 
-- `MARKETING_VERSION = 1.0.1`
-- `CURRENT_PROJECT_VERSION = 4`
+- `MARKETING_VERSION = 1.1.0`
+- `CURRENT_PROJECT_VERSION = 5`
 
 ## Tag and publish a GitHub Release
 
@@ -74,8 +74,8 @@ After confirming that the merge commit is in `origin/main`:
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-git tag -a v1.0.1 -m "AiUsage v1.0.1"
-git push origin v1.0.1
+git tag -a v1.1.0 -m "AiUsage v1.1.0"
+git push origin v1.1.0
 ```
 
 Pushing the tag starts `.github/workflows/release.yml`, which:
@@ -100,7 +100,7 @@ No GitHub Release is created unless notarization is accepted and every verificat
 Download the ZIP from GitHub into a clean directory and repeat the distribution checks:
 
 ```bash
-ditto -x -k AiUsage-v1.0.1-macos-universal.zip verify
+ditto -x -k AiUsage-v1.1.0-macos-universal.zip verify
 codesign --verify --deep --strict --verbose=2 verify/AiUsage.app
 spctl --assess --type execute --verbose=4 verify/AiUsage.app
 xcrun stapler validate verify/AiUsage.app
