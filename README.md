@@ -118,23 +118,6 @@ Try enabling the setting again. If macOS requests approval, select **Open System
 
 API-key sessions without a shared subscription limit are not supported.
 
-## Development
-
-AiUsage is built with Swift 6, SwiftUI, and AppKit.
-
-```bash
-xcodebuild -project AiUsage.xcodeproj -scheme AiUsage -configuration Debug \
-  -derivedDataPath build/DerivedData build
-open build/DerivedData/Build/Products/Debug/AiUsage.app
-```
-
-Run the complete test suite with:
-
-```bash
-xcodebuild test -project AiUsage.xcodeproj -scheme AiUsage \
-  -destination 'platform=macOS'
-```
-
 ## Documentation
 
 - [Architecture and data sources](docs/architecture.md)
