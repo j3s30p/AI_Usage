@@ -23,13 +23,12 @@ AiUsage is a native macOS menu bar app that shows the current usage limits repor
 
 ## Features
 
-- **Usage at a glance** — A menu bar ring and optional percentage show the current remaining allowance.
-- **Five-hour and weekly limits** — The menu bar prefers the five-hour limit and falls back to the weekly limit when necessary. The popover shows both separately.
-- **Codex and Claude together** — Show either provider or both.
-- **Customizable menu bar** — Choose provider names or logos and whether to show percentages.
-- **Automatic refresh** — Refresh every 1, 3, 5, 15, or 30 minutes; the default is 3 minutes.
-- **Last known good value** — Temporary failures do not immediately replace valid usage with 100% or an empty state.
-- **Launch at login** — Register through macOS without a helper app or terminal command.
+- **Codex and Claude together** — See both providers in one menu bar app.
+- **Five-hour and weekly limits** — Check remaining percentages and reset times at a glance.
+- **A menu bar that fits** — Choose provider names or logos, percentages, and a refresh interval.
+- **Reliable background monitoring** — Keep the latest valid value through temporary failures and optionally launch at login.
+
+![AiUsage menu bar showing Codex and Claude remaining usage](docs/images/aiusage-menubar.png)
 
 ## Install
 
@@ -59,56 +58,17 @@ Release builds are signed with a Developer ID Application certificate and notari
 3. Codex works without another connection step when the local Codex CLI is signed in.
 4. For Claude, keep the recommended `statusLine cache` mode, select **Connect Claude statusLine…** once, and approve the change. You do not need to enter commands or edit settings files manually.
 
-After the connection is established, Claude statusLine provides fresh usage when Claude Code produces its next response. AiUsage preserves a compatible existing statusLine and restores it when you disconnect. To read usage shared with Claude Desktop or claude.ai, you may select the experimental `OAuth Keychain` mode when valid Claude Code OAuth credentials are available.
-
-## Display behavior
-
-```text
-Codex · [ring] 23% │ Claude · [ring] 48%
-```
-
-- At 100%, the ring is complete. As the remaining allowance decreases, it disappears clockwise from 12 o'clock.
-- At 0%, a red 1-degree arc remains so an exhausted limit is still visible.
-- A provider that has not connected displays a disconnected indicator instead of a guessed percentage.
-- The popover shows the five-hour and weekly percentages with their reset times. Limits that the account does not provide are marked unavailable.
-
-## Data sources
-
-| Provider | Source | Notes |
-| --- | --- | --- |
-| Codex | Local `codex app-server` method `account/rateLimits/read` | Requires an installed and signed-in Codex CLI. AiUsage does not open another login window. |
-| Claude statusLine | Local `~/.claude/usage-cache.json` cache | Recommended. Claude Code refreshes the value when it responds. |
-| Claude OAuth | Claude Code's local credential store and Anthropic usage endpoint | Checked only after explicit selection. This experimental feature depends on a private API. |
-
-If OAuth usage fails or credentials cannot be read silently in the background, AiUsage does not repeatedly show authentication prompts and falls back to the statusLine cache.
+Claude statusLine provides fresh usage after Claude Code's next response. AiUsage preserves a compatible existing statusLine and restores it when disconnected. Experimental OAuth mode is also available for compatible Claude Code credentials.
 
 ## Privacy and macOS permissions
 
-AiUsage has no server of its own and includes no analytics SDK. Codex and Claude statusLine data are read locally. A request is sent to Anthropic's usage endpoint only when Claude OAuth mode is selected.
+AiUsage has no server of its own and includes no analytics SDK.
 
-- AiUsage does not collect or log account email addresses, prompts, conversation content, session IDs, or working directories while reading usage.
-- The statusLine cache stores only utilization, reset times, and capture time.
-- A backup needed to restore existing Claude settings is stored locally with `0600` permissions.
-- OAuth tokens and server error bodies are not stored in app settings or logs.
+- Codex and Claude statusLine data are read locally.
+- Prompts, conversations, account emails, session IDs, and working directories are not collected or logged.
 - Screen Recording and Accessibility permissions are not required.
-- Keychain approval can begin only after the user explicitly selects Claude OAuth mode.
-- Launch at login uses macOS `SMAppService`; if macOS requires approval, AiUsage links to System Settings.
 
 See [Architecture and data sources](docs/architecture.md) for the full data flow and security boundaries.
-
-## Troubleshooting
-
-### The menu bar shows a disconnected indicator
-
-- **Codex:** Confirm that the Codex CLI is signed in, then refresh the popover.
-- **Claude statusLine:** Check the connection in Settings and send one message in Claude Code.
-- **Claude OAuth:** Select OAuth mode again in Settings to verify authorization.
-
-After a provider has connected successfully, AiUsage retains its recent value through temporary failures. When that value becomes too old, AiUsage shows a disconnected state instead of guessing.
-
-### Launch at login cannot be enabled
-
-Try enabling the setting again. If macOS requests approval, select **Open System Settings** and allow AiUsage under `General > Login Items & Extensions`.
 
 ## Requirements
 
