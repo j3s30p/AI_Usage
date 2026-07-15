@@ -54,11 +54,13 @@ Release builds are signed with a Developer ID Application certificate and notari
 ## First launch
 
 1. Select AiUsage in the menu bar and open **Settings**.
-2. Use the **General** tab for app behavior and Claude connections, and the **Menu Bar** tab to choose providers, display style, refresh interval, and optional usage ring colors.
+2. Use the **General** tab for app behavior, Claude connections, and current/latest version information. Use the **Menu Bar** tab to choose providers, display style, refresh interval, and optional usage ring colors.
 3. Codex works without another connection step when the local Codex CLI is signed in.
 4. For Claude, keep the recommended `statusLine cache` mode, select **Connect Claude statusLine…** once, and approve the change. You do not need to enter commands or edit settings files manually.
 
 Claude statusLine provides fresh usage after Claude Code's next response. AiUsage preserves a compatible existing statusLine and restores it when disconnected. Experimental OAuth mode is also available for compatible Claude Code credentials.
+
+AiUsage checks its signed Sparkle appcast at launch and every 24 hours. When a newer version is available, an update button appears in the menu bar popover and opens Sparkle's verified update flow.
 
 ## Privacy and macOS permissions
 

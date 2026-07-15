@@ -9,14 +9,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = AppPreferences()
     let launchAtLoginController = LaunchAtLoginController()
     let statusLineSettingsModel = ClaudeStatusLineSettingsModel()
-    let updaterController = SPUStandardUpdaterController(
+    let updateStatusModel = UpdateStatusModel(
+        previewAvailableVersion: AppDelegate.previewAvailableVersion
+    )
+    lazy var updaterController = SPUStandardUpdaterController(
         startingUpdater: true,
-        updaterDelegate: nil,
+        updaterDelegate: updateStatusModel,
         userDriverDelegate: nil
     )
 
     private var menuBarController: MenuBarController?
     private var monitorTask: Task<Void, Never>?
+    private var updateCheckTask: Task<Void, Never>?
     private var monitoredProviders: Set<UsageProvider> = []
     private var monitoredRefreshInterval: UsageRefreshInterval?
     private var monitoredClaudeUsageMode: ClaudeUsageMode?
@@ -25,14 +29,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else {
             return
         }
-        menuBarController = MenuBarController(model: model, preferences: preferences)
+        menuBarController = MenuBarController(
+            model: model,
+            preferences: preferences,
+            updateStatusModel: updateStatusModel,
+            onInstallUpdate: { [weak self] in
+                self?.checkForUpdates()
+            }
+        )
         observePreferences()
         observeModel()
-        restartMonitor()
+        if !updateStatusModel.isPreviewingUpdate {
+            restartMonitor()
+            startUpdateChecks()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         monitorTask?.cancel()
+        updateCheckTask?.cancel()
         model.shutdown()
     }
 
@@ -52,6 +67,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func checkForUpdates() {
         updaterController.checkForUpdates(nil)
+    }
+
+    private func startUpdateChecks() {
+        guard !updateStatusModel.isPreviewingUpdate else { return }
+
+        updateCheckTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                updateStatusModel.beginChecking()
+                updaterController.updater.checkForUpdateInformation()
+
+                do {
+                    try await Task.sleep(for: .seconds(86_400))
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    private static var previewAvailableVersion: String? {
+#if DEBUG
+        ProcessInfo.processInfo.environment["AIUSAGE_PREVIEW_UPDATE_VERSION"]
+#else
+        nil
+#endif
     }
 
     private func restartMonitor() {

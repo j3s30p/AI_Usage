@@ -7,42 +7,45 @@ struct SettingsView: View {
     @Bindable var preferences: AppPreferences
     @Bindable var launchAtLoginController: LaunchAtLoginController
     @Bindable var statusLineModel: ClaudeStatusLineSettingsModel
+    @Bindable var updateStatusModel: UpdateStatusModel
 
     private let onAuthorizeClaudeOAuth: ClaudeOAuthAuthorizationAction
-    private let onCheckForUpdates: @MainActor () -> Void
 
     @State private var selectedClaudeUsageMode: ClaudeUsageMode
     @State private var isAuthorizingClaudeOAuth = false
     @State private var oauthFeedback: OAuthFeedback?
     @State private var languageChangeRequiresRestart = false
+    @State private var selectedTab = 0
 
     init(
         preferences: AppPreferences,
         launchAtLoginController: LaunchAtLoginController,
         statusLineModel: ClaudeStatusLineSettingsModel,
-        onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction,
-        onCheckForUpdates: @escaping @MainActor () -> Void
+        updateStatusModel: UpdateStatusModel,
+        onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction
     ) {
         self.preferences = preferences
         self.launchAtLoginController = launchAtLoginController
         self.statusLineModel = statusLineModel
+        self.updateStatusModel = updateStatusModel
         self.onAuthorizeClaudeOAuth = onAuthorizeClaudeOAuth
-        self.onCheckForUpdates = onCheckForUpdates
         _selectedClaudeUsageMode = State(
             initialValue: preferences.claudeUsageMode
         )
     }
 
     var body: some View {
-        TabView {
-            generalSettings
-                .tabItem {
-                    Label("일반", systemImage: "gearshape")
-                }
-
+        TabView(selection: $selectedTab) {
             menuBarSettings
+                .tag(0)
                 .tabItem {
                     Label("메뉴바", systemImage: "menubar.rectangle")
+                }
+
+            generalSettings
+                .tag(1)
+                .tabItem {
+                    Label("일반", systemImage: "gearshape")
                 }
         }
         .frame(width: 420, height: 560)
@@ -76,16 +79,28 @@ struct SettingsView: View {
 
             LaunchAtLoginSection(controller: launchAtLoginController)
 
-            Section("Updates") {
-                Button("Check for Updates…") {
-                    onCheckForUpdates()
-                }
-            }
-
             claudeUsageSettings
             ClaudeStatusLineConnectionSection(model: statusLineModel)
+
+            Section("정보") {
+                LabeledContent(
+                    "현재 버전",
+                    value: "v\(updateStatusModel.currentVersion)"
+                )
+                LabeledContent("최신 버전", value: latestVersionText)
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private var latestVersionText: String {
+        if updateStatusModel.isChecking {
+            return String(localized: "확인 중…")
+        }
+        guard let latestVersion = updateStatusModel.latestVersion else {
+            return String(localized: "확인할 수 없음")
+        }
+        return "v\(latestVersion)"
     }
 
     private var menuBarSettings: some View {
