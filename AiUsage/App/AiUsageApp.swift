@@ -11,11 +11,9 @@ struct AiUsageApp: App {
                 preferences: appDelegate.preferences,
                 launchAtLoginController: appDelegate.launchAtLoginController,
                 statusLineModel: appDelegate.statusLineSettingsModel,
+                updateStatusModel: appDelegate.updateStatusModel,
                 onAuthorizeClaudeOAuth: {
                     await appDelegate.authorizeClaudeOAuthFromUserSelection()
-                },
-                onCheckForUpdates: {
-                    appDelegate.checkForUpdates()
                 }
             )
         }

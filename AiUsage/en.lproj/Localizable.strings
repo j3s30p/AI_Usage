@@ -4,6 +4,12 @@
 "Restart AiUsage to apply the selected language." = "Restart AiUsage to apply the selected language.";
 "Updates" = "Updates";
 "Check for Updates…" = "Check for Updates…";
+"정보" = "About";
+"현재 버전" = "Current version";
+"최신 버전" = "Latest version";
+"확인 중…" = "Checking…";
+"확인할 수 없음" = "Unavailable";
+"AiUsage v%@ 업데이트" = "Update AiUsage to v%@";
 "일반" = "General";
 "메뉴바" = "Menu Bar";
 "로그인 시 AiUsage 자동 실행" = "Launch AiUsage at login";

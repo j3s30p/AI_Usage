@@ -27,12 +27,10 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/j3s30p/AI_Usage/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>
 	<string>VwUB6fha9lNZYJFW2RyBD0mM2fM/izDvjD2UqSm2tC8=</string>
-	<key>SUScheduledCheckInterval</key>
-	<integer>86400</integer>
 </dict>
 </plist>

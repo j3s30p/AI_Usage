@@ -6,6 +6,8 @@ struct UsagePopoverView: View {
 
     let model: AppModel
     let preferences: AppPreferences
+    let updateStatusModel: UpdateStatusModel
+    let onInstallUpdate: @MainActor () -> Void
 
     var body: some View {
         let providers = UsageProvider.allCases.filter {
@@ -53,6 +55,20 @@ struct UsagePopoverView: View {
                     .frame(maxWidth: .infinity)
                 }
                 .scrollBounceBehavior(.basedOnSize)
+            }
+
+            if let availableVersion = updateStatusModel.availableVersion {
+                Button {
+                    onInstallUpdate()
+                } label: {
+                    Label(
+                        "AiUsage v\(availableVersion) 업데이트",
+                        systemImage: "arrow.down.circle.fill"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
 
             Divider()

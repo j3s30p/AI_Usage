@@ -27,6 +27,8 @@ Launch at login uses `SMAppService.mainApp` without a helper or shell script. Re
 
 The menu bar's names, logos, and percentages remain in a template image so macOS can adapt them to light and dark menu bars. When usage ring colors are enabled, only the rings are drawn in a separate overlay: red through 5%, yellow through 30%, and green above 30%. The same thresholds apply to the larger rings in the popover. Color thresholds use the rounded percentage shown to the user.
 
+At launch and every 24 hours, AiUsage asks Sparkle to probe the signed appcast without presenting update UI. Settings shows the installed and latest versions. When Sparkle reports a newer valid release, the popover shows an update button; selecting it starts Sparkle's standard signed update flow.
+
 ## Codex
 
 AiUsage keeps one local `codex app-server` connection while Codex is enabled. At the selected interval it calls the official `account/rateLimits/read` method, reads the 300-minute and 10,080-minute windows, and reconnects with backoff after a disconnection.

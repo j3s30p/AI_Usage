@@ -5,14 +5,23 @@ import SwiftUI
 final class MenuBarController: NSObject, NSPopoverDelegate {
     private let model: AppModel
     private let preferences: AppPreferences
+    private let updateStatusModel: UpdateStatusModel
+    private let onInstallUpdate: @MainActor () -> Void
     private let statusItem: NSStatusItem
     private let popover: NSPopover
     private let alertOverlay: MenuBarAlertOverlayView
     private var freshnessTask: Task<Void, Never>?
 
-    init(model: AppModel, preferences: AppPreferences) {
+    init(
+        model: AppModel,
+        preferences: AppPreferences,
+        updateStatusModel: UpdateStatusModel,
+        onInstallUpdate: @escaping @MainActor () -> Void
+    ) {
         self.model = model
         self.preferences = preferences
+        self.updateStatusModel = updateStatusModel
+        self.onInstallUpdate = onInstallUpdate
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         popover = NSPopover()
         alertOverlay = MenuBarAlertOverlayView(frame: .zero)
@@ -23,7 +32,12 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         popover.delegate = self
         popover.contentSize = NSSize(width: 340, height: 390)
         popover.contentViewController = NSHostingController(
-            rootView: UsagePopoverView(model: model, preferences: preferences)
+            rootView: UsagePopoverView(
+                model: model,
+                preferences: preferences,
+                updateStatusModel: updateStatusModel,
+                onInstallUpdate: onInstallUpdate
+            )
         )
 
         if let button = statusItem.button {
@@ -34,6 +48,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
             button.imageScaling = .scaleNone
             alertOverlay.frame = button.bounds
             button.addSubview(alertOverlay)
+
+#if DEBUG
+            if ProcessInfo.processInfo.environment["AIUSAGE_PREVIEW_UPDATE_VERSION"] != nil {
+                Task { @MainActor [weak self, weak button] in
+                    try? await Task.sleep(for: .milliseconds(300))
+                    guard let self, let button else { return }
+                    showPopover(relativeTo: button)
+                }
+            }
+#endif
         }
 
         updateStatusItem()
@@ -142,12 +166,16 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         if popover.isShown {
             popover.performClose(sender)
         } else {
-            popover.show(
-                relativeTo: sender.bounds,
-                of: sender,
-                preferredEdge: .minY
-            )
-            popover.contentViewController?.view.window?.makeKey()
+            showPopover(relativeTo: sender)
         }
+    }
+
+    private func showPopover(relativeTo sender: NSStatusBarButton) {
+        popover.show(
+            relativeTo: sender.bounds,
+            of: sender,
+            preferredEdge: .minY
+        )
+        popover.contentViewController?.view.window?.makeKey()
     }
 }
