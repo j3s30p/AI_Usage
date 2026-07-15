@@ -198,6 +198,12 @@ jobs:
             --options runtime \
             --sign "$SIGNING_IDENTITY" \
             --timestamp \
+            "$sparkle/Versions/Current/Autoupdate"
+          codesign --force \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
             "$sparkle/Versions/Current/XPCServices/Downloader.xpc"
           codesign --force \
             --keychain "$SIGNING_KEYCHAIN" \
@@ -294,6 +300,8 @@ jobs:
             issue_count="$(jq '[.issues[]?] | length' "$log")"
             error_count="$(jq '[.issues[]? | select(.severity == "error")] | length' "$log")"
             echo "Notarization log: $issue_count issue(s), $error_count error(s)"
+            jq -r '.issues[]? | "\(.severity): \(.path // "unknown path"): \(.message)"' \
+              "$log"
           else
             error_count=0
           fi
