@@ -53,6 +53,10 @@ Enter the remaining values through GitHub's private prompt or web settings. Befo
 gh secret list --repo j3s30p/AI_Usage --json name --jq '.[].name' | sort
 ```
 
+Sparkle update archives use a separate EdDSA key. Store its exported private
+key as the `SPARKLE_PRIVATE_KEY` repository secret. The matching public key is
+committed in `Config/AiUsage-Info.plist`; never commit the private key.
+
 ## Prepare a version
 
 1. Set `MARKETING_VERSION` to the new semantic version.
@@ -90,8 +94,9 @@ Pushing the tag starts `.github/workflows/release.yml`, which:
 8. Staples the accepted ticket to the app.
 9. Recreates the final ZIP from the stapled app.
 10. Extracts and re-verifies the final ZIP with `codesign`, `stapler`, `spctl`, architecture, version, and helper checks.
-11. Publishes the final ZIP and SHA-256 file as a stable GitHub Release.
-12. Deletes the temporary Keychain, `.p12`, and `.p8` whether the job succeeds or fails.
+11. Signs `appcast.xml` with the Sparkle EdDSA key.
+12. Publishes the final ZIP, SHA-256 file, and appcast as a stable GitHub Release.
+13. Deletes the temporary Keychain, `.p12`, and `.p8` whether the job succeeds or fails.
 
 No GitHub Release is created unless notarization is accepted and every verification succeeds.
 
@@ -105,6 +110,8 @@ codesign --verify --deep --strict --verbose=2 verify/AiUsage.app
 spctl --assess --type execute --verbose=4 verify/AiUsage.app
 xcrun stapler validate verify/AiUsage.app
 lipo verify/AiUsage.app/Contents/MacOS/AiUsage -verify_arch arm64 x86_64
+curl --fail --location \
+  https://github.com/j3s30p/AI_Usage/releases/latest/download/appcast.xml
 ```
 
 The signature must contain the expected Developer ID Application authority and Team ID, Hardened Runtime, and a secure timestamp. It must not include the `com.apple.security.get-task-allow` entitlement.

@@ -13,6 +13,9 @@ struct AiUsageApp: App {
                 statusLineModel: appDelegate.statusLineSettingsModel,
                 onAuthorizeClaudeOAuth: {
                     await appDelegate.authorizeClaudeOAuthFromUserSelection()
+                },
+                onCheckForUpdates: {
+                    appDelegate.checkForUpdates()
                 }
             )
         }

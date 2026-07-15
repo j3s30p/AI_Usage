@@ -1,5 +1,6 @@
 import AppKit
 import Observation
+import Sparkle
 import SwiftUI
 
 @MainActor
@@ -8,6 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let preferences = AppPreferences()
     let launchAtLoginController = LaunchAtLoginController()
     let statusLineSettingsModel = ClaudeStatusLineSettingsModel()
+    let updaterController = SPUStandardUpdaterController(
+        startingUpdater: true,
+        updaterDelegate: nil,
+        userDriverDelegate: nil
+    )
 
     private var menuBarController: MenuBarController?
     private var monitorTask: Task<Void, Never>?
@@ -42,6 +48,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     {
         await ClaudeOAuthUserInitiatedAuthorization()
             .requestAccessFromUserAction()
+    }
+
+    func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
     }
 
     private func restartMonitor() {

@@ -24,3 +24,48 @@ jobs:
           CODE_SIGN_IDENTITY=-
           CODE_SIGN_STYLE=Manual
           DEVELOPMENT_TEAM=''
+
+      - name: Validate Sparkle update artifact
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          derived_data="$RUNNER_TEMP/SparkleDerivedData"
+          app="$derived_data/Build/Products/Release/AiUsage.app"
+          archive_dir="$RUNNER_TEMP/sparkle-archive"
+          archive="$archive_dir/AiUsage-test.zip"
+
+          xcodebuild build \
+            -project AiUsage.xcodeproj \
+            -scheme AiUsage \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$derived_data" \
+            ARCHS='arm64 x86_64' \
+            ONLY_ACTIVE_ARCH=NO \
+            ENABLE_CODE_COVERAGE=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+          test -d "$app/Contents/Frameworks/Sparkle.framework"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' \
+            "$app/Contents/Info.plist")" \
+            = 'https://github.com/j3s30p/AI_Usage/releases/latest/download/appcast.xml'
+          test -n "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' \
+            "$app/Contents/Info.plist")"
+
+          mkdir -p "$archive_dir"
+          ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
+          test -n "$SPARKLE_PRIVATE_KEY"
+          generate_appcast="$derived_data/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" \
+            | "$generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix 'https://example.invalid/' \
+              "$archive_dir"
+
+          appcast="$archive_dir/appcast.xml"
+          test -s "$appcast"
+          grep -q 'sparkle:edSignature=' "$appcast"

@@ -100,6 +100,7 @@ jobs:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
@@ -110,6 +111,7 @@ jobs:
             APPLE_API_KEY_P8_BASE64
             APPLE_API_KEY_ID
             APPLE_API_ISSUER_ID
+            SPARKLE_PRIVATE_KEY
           )
           for name in "${required_secrets[@]}"; do
             if [[ -z "${!name:-}" ]]; then
@@ -189,6 +191,32 @@ jobs:
 
           app="$RUNNER_TEMP/ReleaseDerivedData/Build/Products/Release/AiUsage.app"
           test -d "$app"
+          sparkle="$app/Contents/Frameworks/Sparkle.framework"
+          test -d "$sparkle"
+          codesign --force \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            "$sparkle/Versions/Current/XPCServices/Downloader.xpc"
+          codesign --force \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            "$sparkle/Versions/Current/XPCServices/Installer.xpc"
+          codesign --force \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            "$sparkle/Versions/Current/Updater.app"
+          codesign --force \
+            --keychain "$SIGNING_KEYCHAIN" \
+            --options runtime \
+            --sign "$SIGNING_IDENTITY" \
+            --timestamp \
+            "$sparkle"
           codesign --force \
             --keychain "$SIGNING_KEYCHAIN" \
             --options runtime \
@@ -223,6 +251,12 @@ jobs:
             "$app/Contents/Info.plist")" = "$VERSION"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' \
             "$app/Contents/Info.plist")" = "$BUILD_NUMBER"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' \
+            "$app/Contents/Info.plist")" \
+            = 'https://github.com/j3s30p/AI_Usage/releases/latest/download/appcast.xml'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :SUPublicEDKey' \
+            "$app/Contents/Info.plist")" \
+            = 'VwUB6fha9lNZYJFW2RyBD0mM2fM/izDvjD2UqSm2tC8='
 
           echo "APP_PATH=$app" >> "$GITHUB_ENV"
 
@@ -335,6 +369,37 @@ jobs:
           echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
           echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
 
+      - name: Generate signed Sparkle appcast
+        id: appcast
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          appcast_dir="$RUNNER_TEMP/appcast"
+          appcast="$appcast_dir/appcast.xml"
+          artifact="${{ steps.package.outputs.artifact }}"
+          artifact_name="$(basename "$artifact")"
+          generate_appcast="$RUNNER_TEMP/ReleaseDerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
+
+          rm -rf "$appcast_dir"
+          mkdir -p "$appcast_dir"
+          cp "$artifact" "$appcast_dir/$artifact_name"
+          printf '%s' "$SPARKLE_PRIVATE_KEY" \
+            | "$generate_appcast" \
+              --ed-key-file - \
+              --download-url-prefix "https://github.com/j3s30p/AI_Usage/releases/download/$GITHUB_REF_NAME/" \
+              --link 'https://github.com/j3s30p/AI_Usage' \
+              "$appcast_dir"
+
+          test -s "$appcast"
+          grep -Fq "url=\"https://github.com/j3s30p/AI_Usage/releases/download/$GITHUB_REF_NAME/$artifact_name\"" "$appcast"
+          grep -Fq "<sparkle:version>$BUILD_NUMBER</sparkle:version>" "$appcast"
+          grep -Fq "<sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>" "$appcast"
+          grep -q 'sparkle:edSignature=' "$appcast"
+          echo "appcast=$appcast" >> "$GITHUB_OUTPUT"
+
       - name: Remove temporary signing credentials
         if: ${{ always() }}
         shell: bash
@@ -354,8 +419,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ARTIFACT: ${{ steps.package.outputs.artifact }}
           CHECKSUM: ${{ steps.package.outputs.checksum }}
+          APPCAST: ${{ steps.appcast.outputs.appcast }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "$ARTIFACT" "$CHECKSUM" \
+          gh release create "$GITHUB_REF_NAME" "$ARTIFACT" "$CHECKSUM" "$APPCAST" \
             --generate-notes \
             --latest \
             --notes "Developer ID signed and Apple notarized macOS release." \
