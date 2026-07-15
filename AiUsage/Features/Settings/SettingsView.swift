@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Bindable var statusLineModel: ClaudeStatusLineSettingsModel
 
     private let onAuthorizeClaudeOAuth: ClaudeOAuthAuthorizationAction
+    private let onCheckForUpdates: @MainActor () -> Void
 
     @State private var selectedClaudeUsageMode: ClaudeUsageMode
     @State private var isAuthorizingClaudeOAuth = false
@@ -19,12 +20,14 @@ struct SettingsView: View {
         preferences: AppPreferences,
         launchAtLoginController: LaunchAtLoginController,
         statusLineModel: ClaudeStatusLineSettingsModel,
-        onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction
+        onAuthorizeClaudeOAuth: @escaping ClaudeOAuthAuthorizationAction,
+        onCheckForUpdates: @escaping @MainActor () -> Void
     ) {
         self.preferences = preferences
         self.launchAtLoginController = launchAtLoginController
         self.statusLineModel = statusLineModel
         self.onAuthorizeClaudeOAuth = onAuthorizeClaudeOAuth
+        self.onCheckForUpdates = onCheckForUpdates
         _selectedClaudeUsageMode = State(
             initialValue: preferences.claudeUsageMode
         )
@@ -50,6 +53,12 @@ struct SettingsView: View {
             }
 
             LaunchAtLoginSection(controller: launchAtLoginController)
+
+            Section("Updates") {
+                Button("Check for Updates…") {
+                    onCheckForUpdates()
+                }
+            }
 
             Section("메뉴바에 표시") {
                 Toggle("Codex", isOn: $preferences.showCodex)
