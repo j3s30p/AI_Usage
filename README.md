@@ -25,7 +25,7 @@ AiUsage is a native macOS menu bar app that shows the current usage limits repor
 
 - **Codex and Claude together** — See both providers in one menu bar app.
 - **Five-hour and weekly limits** — Check remaining percentages and reset times at a glance.
-- **A menu bar that fits** — Choose provider names or logos, percentages, and a refresh interval.
+- **A menu bar that fits** — Choose names or logos, percentages, refresh timing, and optional usage-based ring colors.
 - **Reliable background monitoring** — Keep the latest valid value through temporary failures and optionally launch at login.
 
 ![AiUsage menu bar showing Codex and Claude remaining usage](docs/images/aiusage-menubar.png)
@@ -54,7 +54,7 @@ Release builds are signed with a Developer ID Application certificate and notari
 ## First launch
 
 1. Select AiUsage in the menu bar and open **Settings**.
-2. Choose the providers and display style you want in the menu bar.
+2. Choose the providers and display style you want in the menu bar. Usage ring colors are optional and can be enabled in Settings.
 3. Codex works without another connection step when the local Codex CLI is signed in.
 4. For Claude, keep the recommended `statusLine cache` mode, select **Connect Claude statusLine…** once, and approve the change. You do not need to enter commands or edit settings files manually.
 
