@@ -125,7 +125,7 @@ final class MenuBarStatusImageRendererTests: XCTestCase {
         )
         XCTAssertEqual(unavailableWithPlaceholder.image.size.height, 18)
         XCTAssertTrue(unavailableWithPlaceholder.image.isTemplate)
-        XCTAssertTrue(unavailableWithPlaceholder.zeroRemainingRingCenters.isEmpty)
+        XCTAssertTrue(unavailableWithPlaceholder.ringOverlays.isEmpty)
         XCTAssertNotEqual(
             unavailableWithPlaceholder.image.tiffRepresentation,
             normalRingsWithoutPercentage.tiffRepresentation
@@ -185,7 +185,8 @@ final class MenuBarStatusImageRendererTests: XCTestCase {
             ),
         ])
 
-        XCTAssertEqual(rendering.zeroRemainingRingCenters.count, 1)
+        XCTAssertEqual(rendering.ringOverlays.count, 1)
+        XCTAssertEqual(rendering.ringOverlays.first?.color, .critical)
         XCTAssertTrue(rendering.image.isTemplate)
     }
 
@@ -205,8 +206,36 @@ final class MenuBarStatusImageRendererTests: XCTestCase {
             ),
         ])
 
-        XCTAssertEqual(zero.zeroRemainingRingCenters.count, 1)
-        XCTAssertTrue(one.zeroRemainingRingCenters.isEmpty)
+        XCTAssertEqual(zero.ringOverlays.count, 1)
+        XCTAssertTrue(one.ringOverlays.isEmpty)
+    }
+
+    func testRendererReportsColoredOverlayForEveryAvailableRingWhenEnabled() {
+        let rendering = MenuBarStatusImageRenderer.makeRendering(
+            segments: [
+                MenuBarStatusSegment(
+                    name: "Critical",
+                    remainingFraction: 0.05,
+                    percentageText: "5%"
+                ),
+                MenuBarStatusSegment(
+                    name: "Warning",
+                    remainingFraction: 0.30,
+                    percentageText: "30%"
+                ),
+                MenuBarStatusSegment(
+                    name: "Healthy",
+                    remainingFraction: 0.31,
+                    percentageText: "31%"
+                ),
+            ],
+            usesUsageRingColors: true
+        )
+
+        XCTAssertEqual(
+            rendering.ringOverlays.map(\.color),
+            [.critical, .warning, .healthy]
+        )
     }
 
     func testOfficialLogoModeUsesBundledVectorAssetAndLessWidth() throws {

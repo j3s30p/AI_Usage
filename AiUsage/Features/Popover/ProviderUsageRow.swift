@@ -4,6 +4,7 @@ struct ProviderUsageRow: View {
     let provider: UsageProvider
     let state: ProviderLoadState
     let maximumSnapshotAge: TimeInterval
+    let usesUsageRingColors: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -98,6 +99,7 @@ struct ProviderUsageRow: View {
 
             RemainingRing(
                 remainingFraction: window.remainingFraction,
+                usesUsageColors: usesUsageRingColors,
                 size: 28,
                 lineWidth: 3
             )

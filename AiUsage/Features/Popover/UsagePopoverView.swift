@@ -45,7 +45,8 @@ struct UsagePopoverView: View {
                                 provider: provider,
                                 state: model.state(for: provider),
                                 maximumSnapshotAge: preferences.refreshInterval
-                                    .maximumExpectedSnapshotAge
+                                    .maximumExpectedSnapshotAge,
+                                usesUsageRingColors: preferences.colorUsageRings
                             )
                         }
                     }

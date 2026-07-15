@@ -89,6 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = preferences.showCodex
             _ = preferences.showClaude
             _ = preferences.showPercentage
+            _ = preferences.colorUsageRings
             _ = preferences.providerDisplayMode
             _ = preferences.refreshInterval
             _ = preferences.claudeUsageMode

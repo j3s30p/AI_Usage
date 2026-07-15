@@ -24,7 +24,13 @@ struct MenuBarStatusSegment: Equatable, Sendable {
 
 struct MenuBarStatusRendering {
     let image: NSImage
-    let zeroRemainingRingCenters: [NSPoint]
+    let ringOverlays: [MenuBarRingOverlay]
+}
+
+struct MenuBarRingOverlay: Equatable {
+    let center: NSPoint
+    let remainingFraction: Double
+    let color: UsageRingColor
 }
 
 @MainActor
@@ -45,7 +51,10 @@ enum MenuBarStatusImageRenderer {
         makeRendering(segments: segments).image
     }
 
-    static func makeRendering(segments: [MenuBarStatusSegment]) -> MenuBarStatusRendering {
+    static func makeRendering(
+        segments: [MenuBarStatusSegment],
+        usesUsageRingColors: Bool = false
+    ) -> MenuBarStatusRendering {
         let font = NSFont.systemFont(ofSize: 13)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -56,12 +65,18 @@ enum MenuBarStatusImageRenderer {
             + providerSeparatorTotalWidth * CGFloat(max(segments.count - 1, 0))
         let imageSize = NSSize(width: ceil(contentWidth), height: canvasHeight)
         let ringCenters = ringCenterXPositions(segments, attributes: attributes)
-        let zeroRemainingRingCenters = zip(segments, ringCenters).compactMap { pair -> NSPoint? in
+        let ringOverlays = zip(segments, ringCenters).compactMap { pair -> MenuBarRingOverlay? in
             let (segment, x) = pair
-            guard let remainingFraction = segment.remainingFraction,
-                  RemainingRing.isDisplayedAsZero(remainingFraction)
-            else { return nil }
-            return NSPoint(x: x, y: canvasHeight / 2)
+            guard let remainingFraction = segment.remainingFraction else { return nil }
+            let isZero = RemainingRing.isDisplayedAsZero(remainingFraction)
+            guard usesUsageRingColors || isZero else { return nil }
+            return MenuBarRingOverlay(
+                center: NSPoint(x: x, y: canvasHeight / 2),
+                remainingFraction: remainingFraction,
+                color: usesUsageRingColors
+                    ? UsageRingColor.color(for: remainingFraction)
+                    : .critical
+            )
         }
 
         let image = NSImage(size: imageSize, flipped: false) { _ in
@@ -89,7 +104,11 @@ enum MenuBarStatusImageRenderer {
                     width: ringSize,
                     height: ringSize
                 )
-                drawRing(in: ringRect, remainingFraction: segment.remainingFraction)
+                drawRing(
+                    in: ringRect,
+                    remainingFraction: segment.remainingFraction,
+                    drawsAvailableRing: !usesUsageRingColors
+                )
                 x += ringSize
 
                 if let percentageText = displayedPercentageText(for: segment) {
@@ -109,7 +128,7 @@ enum MenuBarStatusImageRenderer {
         image.isTemplate = true
         return MenuBarStatusRendering(
             image: image,
-            zeroRemainingRingCenters: zeroRemainingRingCenters
+            ringOverlays: ringOverlays
         )
     }
 
@@ -262,7 +281,11 @@ enum MenuBarStatusImageRenderer {
         (text as NSString).draw(at: NSPoint(x: x, y: y), withAttributes: attributes)
     }
 
-    private static func drawRing(in rect: NSRect, remainingFraction: Double?) {
+    private static func drawRing(
+        in rect: NSRect,
+        remainingFraction: Double?,
+        drawsAvailableRing: Bool
+    ) {
         let center = NSPoint(x: rect.midX, y: rect.midY)
         let radius = (min(rect.width, rect.height) - ringLineWidth) / 2
 
@@ -273,6 +296,7 @@ enum MenuBarStatusImageRenderer {
 
         let remaining = RemainingRing.normalizedRemaining(remainingFraction)
         guard !RemainingRing.isDisplayedAsZero(remaining) else { return }
+        guard drawsAvailableRing else { return }
 
         let foreground: NSBezierPath
         if remaining >= 1 {

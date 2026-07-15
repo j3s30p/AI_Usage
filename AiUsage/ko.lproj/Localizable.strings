@@ -4,6 +4,7 @@
 "Restart AiUsage to apply the selected language." = "선택한 언어를 적용하려면 AiUsage를 다시 실행해 주세요.";
 "Updates" = "업데이트";
 "Check for Updates…" = "업데이트 확인…";
+"사용량에 따라 게이지 색상 표시" = "사용량에 따라 게이지 색상 표시";
 "%d%% remaining" = "%d%% 남음";
 "Resets %@" = "초기화 %@";
 "%@, %d%% remaining" = "%@, %d%% 남음";

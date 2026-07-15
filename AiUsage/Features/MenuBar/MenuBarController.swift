@@ -90,7 +90,10 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
                     : nil
             )
         }
-        let rendering = MenuBarStatusImageRenderer.makeRendering(segments: segments)
+        let rendering = MenuBarStatusImageRenderer.makeRendering(
+            segments: segments,
+            usesUsageRingColors: preferences.colorUsageRings
+        )
         statusItem.length = rendering.image.size.width + 10
         button.image = rendering.image
         alertOverlay.frame = button.bounds

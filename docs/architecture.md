@@ -11,7 +11,7 @@ This document describes AiUsage's implementation, the Codex and Claude usage sou
 - Foundation `URLSession`, `Process`, and Swift Concurrency
 - macOS Security and LocalAuthentication for Keychain access
 - ServiceManagement `SMAppService.mainApp` for launch at login
-- No third-party packages
+- Sparkle 2 for signed automatic updates
 
 The main data path is:
 
@@ -24,6 +24,8 @@ AppPreferences → AppDelegate → AppModel → UsageRepository
 Changing a preference cancels the current monitor and starts a new one with the selected interval and Claude source. Changing the Claude source clears the previous source's snapshot immediately so an older OAuth result cannot hide a newer statusLine result solely because of its timestamp.
 
 Launch at login uses `SMAppService.mainApp` without a helper or shell script. Registration changes only when the user changes the setting. AiUsage refreshes the system state when it becomes active and can open Login Items settings when macOS requires approval.
+
+The menu bar's names, logos, and percentages remain in a template image so macOS can adapt them to light and dark menu bars. When usage ring colors are enabled, only the rings are drawn in a separate overlay: red through 5%, yellow through 30%, and green above 30%. The same thresholds apply to the larger rings in the popover. Color thresholds use the rounded percentage shown to the user.
 
 ## Codex
 
@@ -88,8 +90,10 @@ App preferences contain only:
 
 - Enabled providers
 - Name or logo display and percentage visibility
+- Optional usage-based ring colors
 - Refresh interval
 - Claude usage source
+- App language
 
 After statusLine connection is approved, `~/.claude/aiusage/` contains connection scripts, metadata, the pre-change backup, and any existing statusLine command. These files are used only for preservation and exact disconnection and use `0600` or `0700` permissions.
 

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RemainingRing: View {
     let remainingFraction: Double?
+    var usesUsageColors = false
     var size: CGFloat = 12
     var lineWidth: CGFloat = 1.4
 
@@ -9,25 +10,28 @@ struct RemainingRing: View {
         ZStack {
             if let remainingFraction {
                 let remaining = Self.normalizedRemaining(remainingFraction)
+                let color = usesUsageColors
+                    ? UsageRingColor.color(for: remaining).swiftUIColor
+                    : Color.primary
                 if Self.isDisplayedAsZero(remaining) {
                     Circle()
                         .trim(from: 0, to: Self.zeroRemainingDisplayFraction)
                         .stroke(
-                            .red,
+                            usesUsageColors ? color : .red,
                             style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
                 } else if remaining >= 1 {
                     Circle()
                         .stroke(
-                            .primary,
+                            color,
                             style: StrokeStyle(lineWidth: lineWidth)
                         )
                 } else if remaining > 0 {
                     Circle()
                         .trim(from: Self.trimStart(forRemaining: remaining), to: 1)
                         .stroke(
-                            .primary,
+                            color,
                             style: StrokeStyle(lineWidth: lineWidth, lineCap: .round)
                         )
                         .rotationEffect(.degrees(-90))
@@ -62,4 +66,14 @@ struct RemainingRing: View {
     }
 
     nonisolated static let zeroRemainingDisplayFraction = 1.0 / 360.0
+}
+
+private extension UsageRingColor {
+    var swiftUIColor: Color {
+        switch self {
+        case .critical: .red
+        case .warning: .yellow
+        case .healthy: .green
+        }
+    }
 }

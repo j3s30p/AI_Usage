@@ -73,6 +73,11 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                Toggle(
+                    "사용량에 따라 게이지 색상 표시",
+                    isOn: $preferences.colorUsageRings
+                )
             }
 
             Section("사용량 갱신") {

@@ -14,6 +14,7 @@
 "남은 퍼센트 표시" = "Show remaining percentage";
 "메뉴바 스타일" = "Menu bar style";
 "서비스 표시 방식" = "Provider display";
+"사용량에 따라 게이지 색상 표시" = "Color rings by remaining usage";
 "이름" = "Name";
 "로고" = "Logo";
 "사용량 갱신" = "Usage refresh";
