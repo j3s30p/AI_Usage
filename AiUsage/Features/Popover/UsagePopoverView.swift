@@ -2,6 +2,8 @@ import AppKit
 import SwiftUI
 
 struct UsagePopoverView: View {
+    @Environment(\.openSettings) private var openSettings
+
     let model: AppModel
     let preferences: AppPreferences
 
@@ -55,7 +57,10 @@ struct UsagePopoverView: View {
             Divider()
 
             HStack {
-                SettingsLink {
+                Button {
+                    openSettings()
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                } label: {
                     Label("설정", systemImage: "gear")
                 }
                 .buttonStyle(.borderless)
