@@ -43,7 +43,6 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.refreshInterval, .fifteenMinutes)
         XCTAssertEqual(reloaded.claudeUsageMode, .oauth)
         XCTAssertEqual(reloaded.appLanguage, .english)
-        XCTAssertEqual(defaults.stringArray(forKey: "AppleLanguages"), ["en"])
         XCTAssertEqual(reloaded.enabledProviders, [.claude])
     }
 
@@ -92,19 +91,20 @@ final class AppPreferencesTests: XCTestCase {
         )
     }
 
-    func testSystemLanguageRemovesLanguageOverride() throws {
+    func testEveryAppLanguagePersists() throws {
         let suiteName = "AppPreferencesTests.systemLanguage.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        let preferences = AppPreferences(defaults: defaults)
-        preferences.appLanguage = .korean
-        XCTAssertEqual(defaults.stringArray(forKey: "AppleLanguages"), ["ko"])
+        for language in AppLanguage.allCases {
+            let preferences = AppPreferences(defaults: defaults)
+            preferences.appLanguage = language
 
-        preferences.appLanguage = .system
-        XCTAssertNil(
-            defaults.persistentDomain(forName: suiteName)?["AppleLanguages"]
-        )
+            XCTAssertEqual(
+                AppPreferences(defaults: defaults).appLanguage,
+                language
+            )
+        }
     }
 
     func testRefreshIntervalsExposeExpectedDurations() {

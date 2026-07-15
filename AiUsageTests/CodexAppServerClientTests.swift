@@ -104,7 +104,10 @@ final class CodexAppServerClientTests: XCTestCase {
             _ = try await client.fetchRateLimits()
             XCTFail("A JSON-RPC error must fail the request.")
         } catch UsageServiceError.requestFailed(let message) {
-            XCTAssertEqual(message, "Codex 사용량 요청이 실패했습니다.")
+            XCTAssertEqual(
+                message,
+                String(localized: "Codex 사용량 요청이 실패했습니다.")
+            )
             XCTAssertFalse(message.contains("private@example.com"))
             XCTAssertFalse(message.contains("sensitive-token"))
         } catch {
