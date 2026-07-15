@@ -34,6 +34,28 @@ struct SettingsView: View {
     }
 
     var body: some View {
+        TabView {
+            generalSettings
+                .tabItem {
+                    Label("일반", systemImage: "gearshape")
+                }
+
+            menuBarSettings
+                .tabItem {
+                    Label("메뉴바", systemImage: "menubar.rectangle")
+                }
+        }
+        .frame(width: 420, height: 560)
+        .onChange(of: preferences.claudeUsageMode) {
+            guard !isAuthorizingClaudeOAuth else { return }
+            selectedClaudeUsageMode = $1
+        }
+        .onChange(of: preferences.appLanguage) {
+            languageChangeRequiresRestart = true
+        }
+    }
+
+    private var generalSettings: some View {
         Form {
             Section("Language") {
                 Picker("App Language", selection: $preferences.appLanguage) {
@@ -60,6 +82,14 @@ struct SettingsView: View {
                 }
             }
 
+            claudeUsageSettings
+            ClaudeStatusLineConnectionSection(model: statusLineModel)
+        }
+        .formStyle(.grouped)
+    }
+
+    private var menuBarSettings: some View {
+        Form {
             Section("메뉴바에 표시") {
                 Toggle("Codex", isOn: $preferences.showCodex)
                 Toggle("Claude", isOn: $preferences.showClaude)
@@ -86,58 +116,7 @@ struct SettingsView: View {
                         Text(interval.displayName).tag(interval)
                     }
                 }
-
-                if preferences.showClaude {
-                    LabeledContent("Claude 조회 방식") {
-                        Menu {
-                            ForEach(ClaudeUsageMode.allCases) { mode in
-                                Button {
-                                    requestClaudeUsageMode(mode)
-                                } label: {
-                                    if selectedClaudeUsageMode == mode {
-                                        Label(
-                                            mode.displayName,
-                                            systemImage: "checkmark"
-                                        )
-                                    } else {
-                                        Text(mode.displayName)
-                                    }
-                                }
-                            }
-                        } label: {
-                            Text(selectedClaudeUsageMode.displayName)
-                        }
-                        .disabled(isAuthorizingClaudeOAuth)
-                        .accessibilityLabel("Claude 조회 방식")
-                        .accessibilityValue(selectedClaudeUsageMode.displayName)
-                    }
-
-                    claudeUsageModeDescription
-
-                    if isAuthorizingClaudeOAuth {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
-                                .accessibilityHidden(true)
-                            Text("Claude OAuth 인증 확인 중…")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .accessibilityElement(children: .combine)
-                    }
-
-                    if let oauthFeedback {
-                        Label(
-                            oauthFeedback.message,
-                            systemImage: oauthFeedback.symbol
-                        )
-                        .font(.caption)
-                        .foregroundStyle(oauthFeedback.color)
-                    }
-                }
             }
-
-            ClaudeStatusLineConnectionSection(model: statusLineModel)
 
             if preferences.enabledProviders.isEmpty {
                 Label(
@@ -149,13 +128,56 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 420, height: 640)
-        .onChange(of: preferences.claudeUsageMode) {
-            guard !isAuthorizingClaudeOAuth else { return }
-            selectedClaudeUsageMode = $1
-        }
-        .onChange(of: preferences.appLanguage) {
-            languageChangeRequiresRestart = true
+    }
+
+    private var claudeUsageSettings: some View {
+        Section("Claude 사용량") {
+            LabeledContent("Claude 조회 방식") {
+                Menu {
+                    ForEach(ClaudeUsageMode.allCases) { mode in
+                        Button {
+                            requestClaudeUsageMode(mode)
+                        } label: {
+                            if selectedClaudeUsageMode == mode {
+                                Label(
+                                    mode.displayName,
+                                    systemImage: "checkmark"
+                                )
+                            } else {
+                                Text(mode.displayName)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(selectedClaudeUsageMode.displayName)
+                }
+                .disabled(isAuthorizingClaudeOAuth)
+                .accessibilityLabel("Claude 조회 방식")
+                .accessibilityValue(selectedClaudeUsageMode.displayName)
+            }
+
+            claudeUsageModeDescription
+
+            if isAuthorizingClaudeOAuth {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .accessibilityHidden(true)
+                    Text("Claude OAuth 인증 확인 중…")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .accessibilityElement(children: .combine)
+            }
+
+            if let oauthFeedback {
+                Label(
+                    oauthFeedback.message,
+                    systemImage: oauthFeedback.symbol
+                )
+                .font(.caption)
+                .foregroundStyle(oauthFeedback.color)
+            }
         }
     }
 
