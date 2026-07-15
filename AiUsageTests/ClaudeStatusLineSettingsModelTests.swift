@@ -40,7 +40,10 @@ final class ClaudeStatusLineSettingsModelTests: XCTestCase {
 
         XCTAssertTrue(connected)
         XCTAssertEqual(model.state, connectedState)
-        XCTAssertEqual(model.message, "Claude statusLine 연결을 완료했습니다.")
+        XCTAssertEqual(
+            model.message,
+            String(localized: "Claude statusLine 연결을 완료했습니다.")
+        )
         XCTAssertEqual(model.messageKind, .success)
         XCTAssertFalse(model.isWorking)
         let calls = await manager.callCounts()
@@ -63,7 +66,7 @@ final class ClaudeStatusLineSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.state?.configuration, .managedConnected)
         XCTAssertEqual(
             model.message,
-            "Claude statusLine 도우미를 업데이트했습니다."
+            String(localized: "Claude statusLine 도우미를 업데이트했습니다.")
         )
         XCTAssertEqual(model.messageKind, .success)
     }
@@ -82,7 +85,7 @@ final class ClaudeStatusLineSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.state, disconnectedState)
         XCTAssertEqual(
             model.message,
-            "AiUsage 연결을 해제하고 기존 statusLine을 복원했습니다."
+            String(localized: "AiUsage 연결을 해제하고 기존 statusLine을 복원했습니다.")
         )
         XCTAssertEqual(model.messageKind, .success)
         XCTAssertFalse(model.isWorking)
@@ -126,7 +129,7 @@ final class ClaudeStatusLineSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.state, refreshedState)
         XCTAssertEqual(
             model.message,
-            "Claude statusLine 연결을 완료하지 못했습니다."
+            String(localized: "Claude statusLine 연결을 완료하지 못했습니다.")
         )
         XCTAssertEqual(model.messageKind, .error)
         XCTAssertFalse(model.message?.contains(secret) == true)
@@ -151,7 +154,7 @@ final class ClaudeStatusLineSettingsModelTests: XCTestCase {
         XCTAssertEqual(model.state, refreshedState)
         XCTAssertEqual(
             model.message,
-            "Claude statusLine 연결을 안전하게 해제하지 못했습니다."
+            String(localized: "Claude statusLine 연결을 안전하게 해제하지 못했습니다.")
         )
         XCTAssertEqual(model.messageKind, .error)
         XCTAssertFalse(model.message?.contains(secret) == true)

@@ -22,14 +22,14 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertTrue(requiresApproval.isEnabled)
         XCTAssertEqual(
             requiresApproval.message,
-            "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요."
+            String(localized: "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요.")
         )
 
         XCTAssertEqual(unavailable.state, .unavailable)
         XCTAssertFalse(unavailable.isEnabled)
         XCTAssertEqual(
             unavailable.message,
-            "로그인 시 실행 상태를 확인할 수 없습니다. 토글을 켜 다시 등록해 주세요."
+            String(localized: "로그인 시 실행 상태를 확인할 수 없습니다. 토글을 켜 다시 등록해 주세요.")
         )
     }
 
@@ -102,7 +102,7 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertTrue(controller.isEnabled)
         XCTAssertEqual(
             controller.message,
-            "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요."
+            String(localized: "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요.")
         )
 
         controller.openSystemSettingsLoginItems()
@@ -140,7 +140,7 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertFalse(controller.isWorking)
         XCTAssertEqual(
             controller.message,
-            "로그인 시 실행을 켜지 못했습니다. 잠시 후 다시 시도해 주세요."
+            String(localized: "로그인 시 실행을 켜지 못했습니다. 잠시 후 다시 시도해 주세요.")
         )
         XCTAssertFalse(controller.message?.contains("secret register detail") == true)
         XCTAssertEqual(
@@ -177,7 +177,7 @@ final class LaunchAtLoginControllerTests: XCTestCase {
         XCTAssertFalse(controller.isWorking)
         XCTAssertEqual(
             controller.message,
-            "로그인 시 실행을 끄지 못했습니다. 잠시 후 다시 시도해 주세요."
+            String(localized: "로그인 시 실행을 끄지 못했습니다. 잠시 후 다시 시도해 주세요.")
         )
         XCTAssertFalse(controller.message?.contains("secret unregister detail") == true)
         XCTAssertEqual(

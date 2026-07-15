@@ -28,6 +28,17 @@ final class AppPreferences {
         didSet { defaults.set(claudeUsageMode.rawValue, forKey: Keys.claudeUsageMode) }
     }
 
+    var appLanguage: AppLanguage {
+        didSet {
+            defaults.set(appLanguage.rawValue, forKey: Keys.appLanguage)
+            if let languages = appLanguage.appleLanguages {
+                defaults.set(languages, forKey: "AppleLanguages")
+            } else {
+                defaults.removeObject(forKey: "AppleLanguages")
+            }
+        }
+    }
+
     @ObservationIgnored private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
@@ -57,6 +68,9 @@ final class AppPreferences {
         claudeUsageMode = storedClaudeUsageMode
             .flatMap(ClaudeUsageMode.init(rawValue:))
             ?? .statusLine
+        appLanguage = defaults.string(forKey: Keys.appLanguage)
+            .flatMap(AppLanguage.init(rawValue:))
+            ?? .system
         if storedClaudeUsageMode == "cliUsage" {
             defaults.set(
                 ClaudeUsageMode.statusLine.rawValue,
@@ -88,5 +102,6 @@ final class AppPreferences {
         static let providerDisplayMode = "providerDisplayMode"
         static let refreshInterval = "refreshInterval"
         static let claudeUsageMode = "claudeUsageMode"
+        static let appLanguage = "appLanguage"
     }
 }

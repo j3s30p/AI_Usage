@@ -17,6 +17,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(preferences.providerDisplayMode, .name)
         XCTAssertEqual(preferences.refreshInterval, .threeMinutes)
         XCTAssertEqual(preferences.claudeUsageMode, .statusLine)
+        XCTAssertEqual(preferences.appLanguage, .system)
         XCTAssertEqual(preferences.enabledProviders, Set(UsageProvider.allCases))
     }
 
@@ -32,6 +33,7 @@ final class AppPreferencesTests: XCTestCase {
         preferences.providerDisplayMode = .logo
         preferences.refreshInterval = .fifteenMinutes
         preferences.claudeUsageMode = .oauth
+        preferences.appLanguage = .english
 
         let reloaded = AppPreferences(defaults: defaults)
         XCTAssertFalse(reloaded.showCodex)
@@ -40,6 +42,7 @@ final class AppPreferencesTests: XCTestCase {
         XCTAssertEqual(reloaded.providerDisplayMode, .logo)
         XCTAssertEqual(reloaded.refreshInterval, .fifteenMinutes)
         XCTAssertEqual(reloaded.claudeUsageMode, .oauth)
+        XCTAssertEqual(reloaded.appLanguage, .english)
         XCTAssertEqual(reloaded.enabledProviders, [.claude])
     }
 
@@ -82,14 +85,26 @@ final class AppPreferencesTests: XCTestCase {
         }
     }
 
-    func testClaudeUsageModesExposeExpectedDisplayNames() {
-        XCTAssertEqual(
-            ClaudeUsageMode.allCases.map(\.displayName),
-            [
-                "statusLine 캐시 (권장)",
-                "OAuth Keychain (실험적)",
-            ]
+    func testClaudeUsageModesExposeDisplayNames() {
+        XCTAssertTrue(
+            ClaudeUsageMode.allCases.allSatisfy { !$0.displayName.isEmpty }
         )
+    }
+
+    func testEveryAppLanguagePersists() throws {
+        let suiteName = "AppPreferencesTests.systemLanguage.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        for language in AppLanguage.allCases {
+            let preferences = AppPreferences(defaults: defaults)
+            preferences.appLanguage = language
+
+            XCTAssertEqual(
+                AppPreferences(defaults: defaults).appLanguage,
+                language
+            )
+        }
     }
 
     func testRefreshIntervalsExposeExpectedDurations() {

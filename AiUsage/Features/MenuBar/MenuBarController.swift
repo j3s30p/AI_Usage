@@ -99,15 +99,25 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         let accessibilityLabel = providers.map { provider in
             let state = model.state(for: provider)
             if let snapshot = menuBarSnapshot(for: provider, at: now) {
-                return "\(provider.displayName), \(snapshot.menuBarWindow.remainingPercentage)% 남음"
+                return String(
+                    format: String(localized: "%@, %d%% remaining"),
+                    provider.displayName,
+                    snapshot.menuBarWindow.remainingPercentage
+                )
             }
             if let failure = state.failure {
                 return "\(provider.displayName), \(failure.message)"
             }
             if state.snapshot != nil {
-                return "\(provider.displayName), 마지막 사용량 업데이트 지연"
+                return String(
+                    format: String(localized: "%@, last usage update delayed"),
+                    provider.displayName
+                )
             }
-            return "\(provider.displayName), 사용량을 불러오는 중"
+            return String(
+                format: String(localized: "%@, loading usage"),
+                provider.displayName
+            )
         }.joined(separator: ", ")
         button.setAccessibilityLabel(accessibilityLabel)
         button.toolTip = accessibilityLabel

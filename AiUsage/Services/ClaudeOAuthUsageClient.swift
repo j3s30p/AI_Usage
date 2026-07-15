@@ -135,31 +135,34 @@ enum ClaudeOAuthUsageClientError: LocalizedError, Sendable, Equatable {
     var errorDescription: String? {
         switch self {
         case .credentialsUnavailable:
-            "Claude OAuth 인증 정보를 찾지 못했습니다."
+            String(localized: "Claude OAuth 인증 정보를 찾지 못했습니다.")
         case .credentialsUnreadable:
-            "Claude OAuth 인증 정보를 읽을 수 없습니다."
+            String(localized: "Claude OAuth 인증 정보를 읽을 수 없습니다.")
         case .credentialsInvalid:
-            "Claude OAuth 인증 정보 형식이 올바르지 않습니다."
+            String(localized: "Claude OAuth 인증 정보 형식이 올바르지 않습니다.")
         case .oauthCredentialsMissing:
-            "Claude Code 인증 정보에 claudeAiOauth 항목이 없습니다."
+            String(localized: "Claude Code 인증 정보에 claudeAiOauth 항목이 없습니다.")
         case .accessTokenMissing:
-            "Claude OAuth 액세스 토큰이 없습니다."
+            String(localized: "Claude OAuth 액세스 토큰이 없습니다.")
         case .expirationMissing:
-            "Claude OAuth 인증 정보에 만료 시각이 없습니다."
+            String(localized: "Claude OAuth 인증 정보에 만료 시각이 없습니다.")
         case .credentialsExpired:
-            "Claude OAuth 인증이 만료되었습니다. Claude Code에서 다시 로그인해 주세요."
+            String(localized: "Claude OAuth 인증이 만료되었습니다. Claude Code에서 다시 로그인해 주세요.")
         case .unauthorized:
-            "Claude OAuth 인증이 유효하지 않습니다. Claude Code에서 다시 로그인해 주세요."
+            String(localized: "Claude OAuth 인증이 유효하지 않습니다. Claude Code에서 다시 로그인해 주세요.")
         case .forbidden:
-            "Claude OAuth 토큰에 사용량을 조회할 권한이 없습니다."
+            String(localized: "Claude OAuth 토큰에 사용량을 조회할 권한이 없습니다.")
         case .rateLimited:
-            "Claude OAuth 사용량 조회가 일시적으로 제한되었습니다. 잠시 후 다시 시도해 주세요."
+            String(localized: "Claude OAuth 사용량 조회가 일시적으로 제한되었습니다. 잠시 후 다시 시도해 주세요.")
         case .httpFailure(let statusCode):
-            "Claude OAuth 사용량 조회가 실패했습니다. (HTTP \(statusCode))"
+            String(
+                format: String(localized: "Claude OAuth usage request failed. (HTTP %d)"),
+                statusCode
+            )
         case .invalidResponse:
-            "Claude OAuth 사용량 응답을 읽을 수 없습니다."
+            String(localized: "Claude OAuth 사용량 응답을 읽을 수 없습니다.")
         case .networkFailure:
-            "Claude OAuth 사용량 서비스에 연결할 수 없습니다."
+            String(localized: "Claude OAuth 사용량 서비스에 연결할 수 없습니다.")
         }
     }
 }

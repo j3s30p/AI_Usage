@@ -35,15 +35,15 @@ enum UsageRefreshInterval: String, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .oneMinute:
-            "1분"
+            String(localized: "1분")
         case .threeMinutes:
-            "3분"
+            String(localized: "3분")
         case .fiveMinutes:
-            "5분"
+            String(localized: "5분")
         case .fifteenMinutes:
-            "15분"
+            String(localized: "15분")
         case .thirtyMinutes:
-            "30분"
+            String(localized: "30분")
         }
     }
 }
