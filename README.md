@@ -28,6 +28,8 @@ AiUsage is a native macOS menu bar app that shows the current usage limits repor
 - **A menu bar that fits** — Choose provider names or logos, percentages, and a refresh interval.
 - **Reliable background monitoring** — Keep the latest valid value through temporary failures and optionally launch at login.
 
+![AiUsage menu bar showing Codex and Claude remaining usage](docs/images/aiusage-menubar.png)
+
 ## Install
 
 ### Homebrew

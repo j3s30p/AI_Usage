@@ -30,6 +30,8 @@ AiUsage는 Codex와 Claude가 제공하는 현재 사용 한도를 한곳에 보
 - **내게 맞는 메뉴바** — 서비스 이름이나 로고, 퍼센트와 갱신 주기를 선택할 수 있습니다.
 - **안정적인 백그라운드 확인** — 일시적인 실패에도 최근 정상값을 유지하고 로그인 시 자동으로 실행할 수 있습니다.
 
+![Codex와 Claude 남은 사용량을 표시하는 AiUsage 메뉴바](docs/images/aiusage-menubar.png)
+
 ## 설치
 
 ### Homebrew
