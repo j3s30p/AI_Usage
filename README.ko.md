@@ -141,23 +141,6 @@ AiUsage는 자체 서버나 분석 SDK를 사용하지 않습니다. Codex와 Cl
 
 공유 구독 한도가 없는 Claude API 키 세션은 지원하지 않습니다.
 
-## 개발
-
-AiUsage는 Swift 6, SwiftUI, AppKit으로 만들었으며 외부 패키지에 의존하지 않습니다.
-
-```bash
-xcodebuild -project AiUsage.xcodeproj -scheme AiUsage -configuration Debug \
-  -derivedDataPath build/DerivedData build
-open build/DerivedData/Build/Products/Debug/AiUsage.app
-```
-
-전체 테스트를 실행하려면 다음 명령을 사용하세요.
-
-```bash
-xcodebuild test -project AiUsage.xcodeproj -scheme AiUsage \
-  -destination 'platform=macOS'
-```
-
 ## 문서
 
 - [기술 구조와 데이터 소스](docs/architecture.md)
