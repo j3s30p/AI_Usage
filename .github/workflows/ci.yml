@@ -27,6 +27,8 @@ jobs:
 
       - name: Validate Sparkle update artifact
         shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
 
@@ -56,9 +58,9 @@ jobs:
 
           mkdir -p "$archive_dir"
           ditto -c -k --sequesterRsrc --keepParent "$app" "$archive"
-          private_key="$(openssl rand -base64 32)"
+          test -n "$SPARKLE_PRIVATE_KEY"
           generate_appcast="$derived_data/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_appcast"
-          printf '%s' "$private_key" \
+          printf '%s' "$SPARKLE_PRIVATE_KEY" \
             | "$generate_appcast" \
               --ed-key-file - \
               --download-url-prefix 'https://example.invalid/' \
