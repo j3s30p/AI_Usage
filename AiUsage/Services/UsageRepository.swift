@@ -33,7 +33,7 @@ struct UsageRepository: UsageRepositoryProtocol, Sendable {
                         return (provider, .success(snapshot))
                     } catch {
                         let message = (error as? LocalizedError)?.errorDescription
-                            ?? "사용량을 가져오지 못했습니다."
+                            ?? String(localized: "사용량을 가져오지 못했습니다.")
                         return (provider, .failure(UsageFailure(message: message)))
                     }
                 }

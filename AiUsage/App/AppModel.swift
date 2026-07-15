@@ -82,7 +82,9 @@ final class AppModel {
                     states[provider] = .failed(failure, previous: previous)
                 case nil:
                     states[provider] = .failed(
-                        UsageFailure(message: "사용량 응답을 받지 못했습니다."),
+                        UsageFailure(
+                            message: String(localized: "사용량 응답을 받지 못했습니다.")
+                        ),
                         previous: previous
                     )
                 }

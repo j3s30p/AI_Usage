@@ -9,9 +9,9 @@ enum ClaudeUsageMode: String, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .statusLine:
-            "statusLine 캐시 (권장)"
+            String(localized: "statusLine 캐시 (권장)")
         case .oauth:
-            "OAuth Keychain (실험적)"
+            String(localized: "OAuth Keychain (실험적)")
         }
     }
 

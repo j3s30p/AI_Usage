@@ -82,6 +82,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             _ = preferences.providerDisplayMode
             _ = preferences.refreshInterval
             _ = preferences.claudeUsageMode
+            _ = preferences.appLanguage
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }

@@ -9,9 +9,9 @@ enum ProviderDisplayMode: String, CaseIterable, Identifiable, Sendable {
     var displayName: String {
         switch self {
         case .name:
-            "이름"
+            String(localized: "이름")
         case .logo:
-            "로고"
+            String(localized: "로고")
         }
     }
 }

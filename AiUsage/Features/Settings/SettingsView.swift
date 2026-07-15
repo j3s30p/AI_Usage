@@ -13,6 +13,7 @@ struct SettingsView: View {
     @State private var selectedClaudeUsageMode: ClaudeUsageMode
     @State private var isAuthorizingClaudeOAuth = false
     @State private var oauthFeedback: OAuthFeedback?
+    @State private var languageChangeRequiresRestart = false
 
     init(
         preferences: AppPreferences,
@@ -31,6 +32,23 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
+            Section("Language") {
+                Picker("App Language", selection: $preferences.appLanguage) {
+                    ForEach(AppLanguage.allCases) { language in
+                        Text(language.displayName).tag(language)
+                    }
+                }
+
+                if languageChangeRequiresRestart {
+                    Label(
+                        "Restart AiUsage to apply the selected language.",
+                        systemImage: "arrow.clockwise.circle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+            }
+
             LaunchAtLoginSection(controller: launchAtLoginController)
 
             Section("메뉴바에 표시") {
@@ -122,6 +140,9 @@ struct SettingsView: View {
             guard !isAuthorizingClaudeOAuth else { return }
             selectedClaudeUsageMode = $1
         }
+        .onChange(of: preferences.appLanguage) {
+            languageChangeRequiresRestart = true
+        }
     }
 
     @ViewBuilder
@@ -186,9 +207,9 @@ private enum OAuthFeedback {
     var message: String {
         switch self {
         case .success:
-            "Claude OAuth 인증을 확인했습니다."
+            String(localized: "Claude OAuth 인증을 확인했습니다.")
         case .cancelled:
-            "OAuth 모드 선택을 취소했습니다."
+            String(localized: "OAuth 모드 선택을 취소했습니다.")
         case .failure(let message):
             message
         }
@@ -221,19 +242,19 @@ private extension ClaudeOAuthUserInitiatedAccessResult {
     var userFacingMessage: String {
         switch self {
         case .available:
-            "Claude OAuth 인증을 확인했습니다."
+            String(localized: "Claude OAuth 인증을 확인했습니다.")
         case .notFound:
-            "Claude OAuth 인증 정보를 파일 또는 Keychain에서 찾지 못했습니다."
+            String(localized: "Claude OAuth 인증 정보를 파일 또는 Keychain에서 찾지 못했습니다.")
         case .denied:
-            "Claude Code Keychain 접근이 거부되었습니다."
+            String(localized: "Claude Code Keychain 접근이 거부되었습니다.")
         case .cancelled:
-            "OAuth 모드 선택을 취소했습니다."
+            String(localized: "OAuth 모드 선택을 취소했습니다.")
         case .invalidCredentials:
-            "Claude OAuth 인증 정보를 확인할 수 없습니다."
+            String(localized: "Claude OAuth 인증 정보를 확인할 수 없습니다.")
         case .expired:
-            "Claude OAuth 인증 정보가 만료되었습니다."
+            String(localized: "Claude OAuth 인증 정보가 만료되었습니다.")
         case .unavailable:
-            "Claude OAuth 인증 정보를 사용할 수 없습니다."
+            String(localized: "Claude OAuth 인증 정보를 사용할 수 없습니다.")
         }
     }
 }

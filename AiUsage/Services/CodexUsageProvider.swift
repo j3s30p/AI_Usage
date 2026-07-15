@@ -541,7 +541,7 @@ final actor CodexUsageProvider: UsageFetching {
         guard !outageFailureEmitted else { return }
         outageFailureEmitted = true
         let message = (error as? LocalizedError)?.errorDescription
-            ?? "Codex 사용량을 가져오지 못했습니다."
+            ?? String(localized: "Codex 사용량을 가져오지 못했습니다.")
         let result = ProviderUsageResult.failure(UsageFailure(message: message))
         yield(result)
     }

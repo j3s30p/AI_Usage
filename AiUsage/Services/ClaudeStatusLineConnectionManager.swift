@@ -24,23 +24,23 @@ enum ClaudeStatusLineConnectionError: LocalizedError, Sendable, Equatable {
     var errorDescription: String? {
         switch self {
         case .helperUnavailable:
-            "AiUsage statusLine 도우미를 불러오지 못했습니다."
+            String(localized: "AiUsage statusLine 도우미를 불러오지 못했습니다.")
         case .invalidSettings:
-            "Claude 설정 파일이 올바른 JSON 객체가 아닙니다."
+            String(localized: "Claude 설정 파일이 올바른 JSON 객체가 아닙니다.")
         case .unsupportedStatusLine:
-            "현재 Claude statusLine 설정은 자동 연결을 지원하지 않습니다."
+            String(localized: "현재 Claude statusLine 설정은 자동 연결을 지원하지 않습니다.")
         case .unsafeTarget:
-            "연결 대상이 심볼릭 링크이거나 현재 사용자 소유가 아닙니다."
+            String(localized: "연결 대상이 심볼릭 링크이거나 현재 사용자 소유가 아닙니다.")
         case .managedFilesConflict:
-            "AiUsage 연결 파일과 충돌하는 기존 파일이 있습니다."
+            String(localized: "AiUsage 연결 파일과 충돌하는 기존 파일이 있습니다.")
         case .settingsChangedExternally:
-            "Claude 설정이 외부에서 변경되어 작업을 중단했습니다."
+            String(localized: "Claude 설정이 외부에서 변경되어 작업을 중단했습니다.")
         case .repairUnavailable:
-            "기존 연결 정보가 없어 안전하게 복구할 수 없습니다."
+            String(localized: "기존 연결 정보가 없어 안전하게 복구할 수 없습니다.")
         case .notManaged:
-            "AiUsage가 관리하는 statusLine 연결이 아닙니다."
+            String(localized: "AiUsage가 관리하는 statusLine 연결이 아닙니다.")
         case .fileOperationFailed:
-            "statusLine 연결 파일을 안전하게 변경하지 못했습니다."
+            String(localized: "statusLine 연결 파일을 안전하게 변경하지 못했습니다.")
         }
     }
 }

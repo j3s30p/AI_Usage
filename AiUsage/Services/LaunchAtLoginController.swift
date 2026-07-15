@@ -101,8 +101,8 @@ final class LaunchAtLoginController {
         }
 
         message = shouldEnable
-            ? "로그인 시 실행을 켜지 못했습니다. 잠시 후 다시 시도해 주세요."
-            : "로그인 시 실행을 끄지 못했습니다. 잠시 후 다시 시도해 주세요."
+            ? String(localized: "로그인 시 실행을 켜지 못했습니다. 잠시 후 다시 시도해 주세요.")
+            : String(localized: "로그인 시 실행을 끄지 못했습니다. 잠시 후 다시 시도해 주세요.")
     }
 
     func openSystemSettingsLoginItems() {
@@ -139,9 +139,9 @@ final class LaunchAtLoginController {
         case .disabled, .enabled:
             nil
         case .requiresApproval:
-            "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요."
+            String(localized: "시스템 설정의 로그인 항목에서 AiUsage를 허용해 주세요.")
         case .unavailable:
-            "로그인 시 실행 상태를 확인할 수 없습니다. 토글을 켜 다시 등록해 주세요."
+            String(localized: "로그인 시 실행 상태를 확인할 수 없습니다. 토글을 켜 다시 등록해 주세요.")
         }
     }
 }

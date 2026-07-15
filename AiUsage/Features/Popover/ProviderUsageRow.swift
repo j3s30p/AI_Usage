@@ -31,7 +31,16 @@ struct ProviderUsageRow: View {
                     )
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(
-                        "\(provider.displayName) 사용량 \(isStale ? "업데이트 지연, " : "")\(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened)) 기준"
+                        String(
+                            format: isStale
+                                ? String(localized: "%@ usage, update delayed, as of %@")
+                                : String(localized: "%@ usage, as of %@"),
+                            provider.displayName,
+                            snapshot.fetchedAt.formatted(
+                                date: .abbreviated,
+                                time: .shortened
+                            )
+                        )
                     )
                 }
 
@@ -47,15 +56,15 @@ struct ProviderUsageRow: View {
             if let snapshot = state.snapshot {
                 VStack(alignment: .leading, spacing: 10) {
                     if let fiveHour = snapshot.fiveHour {
-                        usageWindowRow(title: "5시간", window: fiveHour)
+                        usageWindowRow(title: String(localized: "5시간"), window: fiveHour)
                     } else {
-                        unavailableWindowRow(title: "5시간")
+                        unavailableWindowRow(title: String(localized: "5시간"))
                     }
 
                     if let weekly = snapshot.weekly {
-                        usageWindowRow(title: "주간", window: weekly)
+                        usageWindowRow(title: String(localized: "주간"), window: weekly)
                     } else {
-                        unavailableWindowRow(title: "주간")
+                        unavailableWindowRow(title: String(localized: "주간"))
                     }
                 }
             } else if !state.isLoading {
@@ -94,17 +103,32 @@ struct ProviderUsageRow: View {
             )
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(window.remainingPercentage)% 남음")
+                Text(
+                    String(
+                        format: String(localized: "%d%% remaining"),
+                        window.remainingPercentage
+                    )
+                )
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
-                Text("초기화 \(resetText)")
+                Text(
+                    String(
+                        format: String(localized: "Resets %@"),
+                        resetText
+                    )
+                )
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            "\(title), \(window.remainingPercentage)% 남음, 초기화 \(resetText)"
+            String(
+                format: String(localized: "%@, %d%% remaining, resets %@"),
+                title,
+                window.remainingPercentage,
+                resetText
+            )
         )
     }
 
@@ -120,6 +144,11 @@ struct ProviderUsageRow: View {
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), 제공되지 않음")
+        .accessibilityLabel(
+            String(
+                format: String(localized: "%@, unavailable"),
+                title
+            )
+        )
     }
 }

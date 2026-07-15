@@ -289,7 +289,9 @@ final class CodexAppServerClient: @unchecked Sendable {
         let header = try? JSONDecoder().decode(MessageHeader.self, from: data)
         if header?.error != nil {
             // The server message can contain account, path, or request details. Keep the UI generic.
-            throw UsageServiceError.requestFailed("Codex 사용량 요청이 실패했습니다.")
+            throw UsageServiceError.requestFailed(
+                String(localized: "Codex 사용량 요청이 실패했습니다.")
+            )
         }
         return data
     }
