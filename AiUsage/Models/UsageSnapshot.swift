@@ -51,7 +51,7 @@ struct UsageSnapshot: Sendable, Codable, Equatable {
         menuBarWindow.remainingFraction
     }
 
-    var resetAt: Date {
+    var resetAt: Date? {
         menuBarWindow.resetAt
     }
 
@@ -61,6 +61,7 @@ struct UsageSnapshot: Sendable, Codable, Equatable {
 
     func isCurrent(at date: Date, maximumAge: TimeInterval) -> Bool {
         let age = date.timeIntervalSince(fetchedAt)
-        return resetAt > date && age >= 0 && age <= maximumAge
+        let notYetReset = resetAt.map { $0 > date } ?? true
+        return notYetReset && age >= 0 && age <= maximumAge
     }
 }

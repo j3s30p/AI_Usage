@@ -12,10 +12,10 @@ final class LiveUsageSmokeTests: XCTestCase {
 
         XCTAssertEqual(snapshot.provider, .codex)
         XCTAssertTrue((0...1).contains(snapshot.menuBarWindow.remainingFraction))
-        XCTAssertGreaterThan(snapshot.menuBarWindow.resetAt, Date())
+        XCTAssertGreaterThan(try XCTUnwrap(snapshot.menuBarWindow.resetAt), Date())
     }
 
-    func testLiveClaudeStatusLineAvailableWindowWhenRequested() async throws {
+    func testLiveClaudeAvailableWindowWhenRequested() async throws {
         guard ProcessInfo.processInfo.environment["AIUSAGE_LIVE_TESTS"] == "1" else {
             throw XCTSkip("Set AIUSAGE_LIVE_TESTS=1 to run local account smoke tests.")
         }
@@ -24,7 +24,15 @@ final class LiveUsageSmokeTests: XCTestCase {
 
         XCTAssertEqual(snapshot.provider, .claude)
         XCTAssertTrue((0...1).contains(snapshot.menuBarWindow.remainingFraction))
-        XCTAssertGreaterThan(snapshot.menuBarWindow.resetAt, Date())
+        XCTAssertTrue(
+            snapshot.isCurrent(
+                at: .now,
+                maximumAge: ClaudeUsageProvider.cacheMaximumAge
+            )
+        )
+        if let resetAt = snapshot.menuBarWindow.resetAt {
+            XCTAssertGreaterThan(resetAt, Date())
+        }
     }
 
     func testLiveClaudeOAuthAvailableWindowWhenRequested() async throws {
@@ -37,6 +45,6 @@ final class LiveUsageSmokeTests: XCTestCase {
 
         XCTAssertEqual(snapshot.provider, .claude)
         XCTAssertTrue((0...1).contains(snapshot.menuBarWindow.remainingFraction))
-        XCTAssertGreaterThan(snapshot.menuBarWindow.resetAt, Date())
+        XCTAssertGreaterThan(try XCTUnwrap(snapshot.menuBarWindow.resetAt), Date())
     }
 }

@@ -21,7 +21,7 @@ AppPreferences → AppDelegate → AppModel → UsageRepository
                                            └─ ClaudeUsageProvider
 ```
 
-Changing a preference cancels the current monitor and starts a new one with the selected interval and Claude source. Changing the Claude source clears the previous source's snapshot immediately so an older OAuth result cannot hide a newer statusLine result solely because of its timestamp.
+Changing a preference cancels the current monitor and starts a new one with the selected interval and Claude source. Changing the Claude source clears the previous source's snapshot immediately so an older OAuth result cannot hide a newer local result solely because of its timestamp.
 
 Launch at login uses `SMAppService.mainApp` without a helper or shell script. Registration changes only when the user changes the setting. AiUsage refreshes the system state when it becomes active and can open Login Items settings when macOS requires approval.
 
@@ -37,14 +37,16 @@ When a response contains both default Codex and model-specific limits, AiUsage u
 
 ## Claude sources
 
-The user chooses between two sources. AiUsage falls back to statusLine only after OAuth mode fails. The default is `statusLine cache (recommended)`.
+The user chooses between two modes backed by three inputs. The default is `Local caches (recommended)`.
 
-### statusLine cache (recommended)
+- Local caches checks the Claude Code statusLine cache first. A current statusLine snapshot is returned without reading Claude Desktop data. If the statusLine snapshot is unavailable, stale, or past its reset time, AiUsage checks Claude Desktop usage history. It uses Desktop data when that sample is current or newer; otherwise it retains a parsed statusLine snapshot.
+- OAuth checks the private OAuth endpoint first. If that fails, AiUsage runs the same statusLine-to-Desktop local chain.
+
+### statusLine cache
 
 - Reads only the local `~/.claude/usage-cache.json` file.
 - Does not access Keychain or start a login or browser flow.
 - Refreshes when Claude Code's official [statusLine](https://code.claude.com/docs/en/statusline) runs.
-- May retain the last value when only Claude Desktop or the web app is used.
 
 ```text
 Claude Code → ~/.claude/aiusage/statusline-wrapper.sh
@@ -69,14 +71,20 @@ If a compatible statusLine command already exists, AiUsage stores it in a dedica
 
 - Checks `~/.claude/.credentials.json` first, then the `Claude Code-credentials` Keychain item.
 - Background refresh uses `LAContext.interactionNotAllowed` and an explicit no-UI Keychain policy. Credentials are read only when access requires no prompt.
-- If the private `https://api.anthropic.com/api/oauth/usage` request fails or Keychain cannot be read silently, AiUsage checks only the statusLine cache and does not start a login flow.
+- If the private `https://api.anthropic.com/api/oauth/usage` request fails or Keychain cannot be read silently, AiUsage checks the statusLine cache and then Claude Desktop usage history without starting a login flow.
 - Explicitly selecting OAuth mode is the sole boundary at which AiUsage may request Keychain approval. A cancellation or failure keeps the previous source.
 
 The OAuth usage endpoint is not part of Anthropic's public API contract and may change or disappear. Refer to Anthropic's current [authentication and credential policy](https://code.claude.com/docs/en/legal-and-compliance).
 
 ## Claude Desktop and web
 
-Claude Desktop and claude.ai do not update the AiUsage statusLine cache. Experimental OAuth mode may reflect account usage when compatible Claude Code credentials are available. AiUsage does not read browser cookies or Claude Desktop's internal storage.
+Claude Desktop does not update the AiUsage statusLine cache. As a local fallback, AiUsage reads version 2 of Claude Desktop's private, versioned `~/Library/Application Support/Claude/plan-usage-history.json` file. Invalid data and unknown versions are ignored safely.
+
+AiUsage selects the last recorded sample and reads its capture time plus five-hour and weekly utilization. The file does not include reset times, so AiUsage does not infer them and the popover omits the reset line. Claude Desktop normally records a sample about every five minutes while running, but there is no hard freshness bound: logout, sleep, network errors, or API failures can create much longer gaps.
+
+Each sample includes an organization identifier. AiUsage ignores that value and does not store or log it. For accounts with multiple organizations, the last sample may belong to the last recorded organization rather than the organization currently selected in Claude Desktop.
+
+Using claude.ai without opening Claude Desktop or Claude Code does not create a local sample for AiUsage. AiUsage does not read browser cookies, conversation data, OAuth tokens, Local Storage, Session Storage, or any Claude Desktop data other than the plan usage history file.
 
 ## Keychain and code signing
 
@@ -99,4 +107,6 @@ App preferences contain only:
 
 After statusLine connection is approved, `~/.claude/aiusage/` contains connection scripts, metadata, the pre-change backup, and any existing statusLine command. These files are used only for preservation and exact disconnection and use `0600` or `0700` permissions.
 
-AiUsage does not store account email addresses, session IDs, prompts, working directories, OAuth tokens, or server error bodies in app settings or logs. OAuth credentials remain in memory only while a request is created.
+Claude Desktop plan usage history is read in place and is not copied into app settings. Its organization identifier is ignored and is not stored or logged.
+
+AiUsage does not store account email addresses, organization identifiers, session IDs, prompts, working directories, OAuth tokens, or server error bodies in app settings or logs. OAuth credentials remain in memory only while a request is created.

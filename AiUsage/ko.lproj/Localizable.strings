@@ -17,7 +17,7 @@
 "%@ usage request timed out." = "%@ 사용량 조회 시간이 초과되었습니다.";
 "%@ usage response could not be read." = "%@ 사용량 응답을 읽을 수 없습니다.";
 "No available usage limit was found for %@." = "%@의 사용 가능한 사용량 한도를 찾지 못했습니다.";
-"%@ statusLine cache is missing. Restart Claude Code, send a message, and refresh." = "%@ statusLine 캐시가 없습니다. Claude Code를 다시 시작하고 메시지를 보낸 뒤 새로 고침해 주세요.";
+"%@ usage data is unavailable. Open Claude Desktop or send a message in Claude Code, then refresh." = "%@ 사용량 데이터가 없습니다. Claude Desktop을 열거나 Claude Code에서 메시지를 보낸 뒤 새로 고침해 주세요.";
 "%@ usage service could not be reached." = "%@ 사용량 서비스에 연결할 수 없습니다.";
 "%@ usage, update delayed, as of %@" = "%@ 사용량 업데이트 지연, %@ 기준";
 "%@ usage, as of %@" = "%@ 사용량 %@ 기준";

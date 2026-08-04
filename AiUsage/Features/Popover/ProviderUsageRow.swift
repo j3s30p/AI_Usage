@@ -89,7 +89,7 @@ struct ProviderUsageRow: View {
         title: String,
         window: UsageLimitWindow
     ) -> some View {
-        let resetText = window.resetAt.formatted(date: .abbreviated, time: .shortened)
+        let resetText = window.resetAt?.formatted(date: .abbreviated, time: .shortened)
 
         return HStack(spacing: 10) {
             Text(title)
@@ -113,23 +113,31 @@ struct ProviderUsageRow: View {
                 )
                     .font(.callout.weight(.semibold))
                     .monospacedDigit()
-                Text(
-                    String(
-                        format: String(localized: "Resets %@"),
-                        resetText
+                if let resetText {
+                    Text(
+                        String(
+                            format: String(localized: "Resets %@"),
+                            resetText
+                        )
                     )
-                )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            String(
-                format: String(localized: "%@, %d%% remaining, resets %@"),
+            resetText.map {
+                String(
+                    format: String(localized: "%@, %d%% remaining, resets %@"),
+                    title,
+                    window.remainingPercentage,
+                    $0
+                )
+            } ?? String(
+                format: String(localized: "%@, %d%% remaining"),
                 title,
-                window.remainingPercentage,
-                resetText
+                window.remainingPercentage
             )
         )
     }

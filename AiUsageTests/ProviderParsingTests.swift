@@ -31,10 +31,13 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.provider, .codex)
         XCTAssertEqual(snapshot.remainingFraction, 0.48, accuracy: 0.0001)
         XCTAssertEqual(snapshot.remainingPercentage, 48)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_783_664_138)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_783_664_138)
         XCTAssertEqual(snapshot.weekly?.remainingFraction ?? -1, 0.92, accuracy: 0.0001)
         XCTAssertEqual(snapshot.weekly?.remainingPercentage, 92)
-        XCTAssertEqual(snapshot.weekly?.resetAt.timeIntervalSince1970, 1_784_250_938)
+        XCTAssertEqual(
+            try XCTUnwrap(snapshot.weekly?.resetAt).timeIntervalSince1970,
+            1_784_250_938
+        )
         XCTAssertEqual(snapshot.fetchedAt, fetchedAt)
     }
 
@@ -81,7 +84,7 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertNil(snapshot.fiveHour)
         XCTAssertEqual(snapshot.weekly?.remainingPercentage, 97)
         XCTAssertEqual(snapshot.menuBarWindow.remainingPercentage, 97)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_784_506_240)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_784_506_240)
     }
 
     func testCodexAllowsMissingWeeklyWindow() throws {
@@ -158,7 +161,7 @@ final class ProviderParsingTests: XCTestCase {
 
         XCTAssertEqual(snapshot.remainingPercentage, 63)
         XCTAssertEqual(snapshot.weekly?.remainingPercentage, 88)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_783_664_138)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_783_664_138)
     }
 
     func testCodexRejectsTopLevelSparkWhenNamedDefaultLimitIsTemporarilyMissing() throws {
@@ -345,29 +348,230 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.menuBarWindow.remainingPercentage, 82)
     }
 
-    func testClaudeDefaultStatusLineModeInvokesNoActiveSource() async throws {
+    func testClaudeDesktopUsesLastV2SampleAndMillisecondTimestamp() async throws {
+        let history = try makeClaudeDesktopHistory(
+            """
+            {
+              "version": 2,
+              "samples": [
+                {"t": 1699999900000, "org": "old-org", "u": {"fh": 90, "sd": 80}},
+                {"t": 1700000000123, "org": null, "u": {"fh": 25, "sd": 40, "extra": 99}}
+              ]
+            }
+            """
+        )
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+
+        let snapshot = try await ClaudeDesktopUsageProvider(
+            historyURL: history.url
+        ).fetchUsage()
+
+        XCTAssertEqual(snapshot.provider, .claude)
+        XCTAssertEqual(snapshot.fiveHour?.remainingPercentage, 75)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 60)
+        XCTAssertNil(snapshot.fiveHour?.resetAt)
+        XCTAssertNil(snapshot.weekly?.resetAt)
+        XCTAssertEqual(snapshot.fetchedAt.timeIntervalSince1970, 1_700_000_000.123, accuracy: 0.001)
+    }
+
+    func testClaudeDesktopAllowsFiveHourOnlySample() async throws {
+        let history = try makeClaudeDesktopHistory(
+            """
+            {"version": 2, "samples": [{"t": 1700000000000, "u": {"fh": 20}}]}
+            """
+        )
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+
+        let snapshot = try await ClaudeDesktopUsageProvider(
+            historyURL: history.url
+        ).fetchUsage()
+
+        XCTAssertEqual(snapshot.fiveHour?.remainingPercentage, 80)
+        XCTAssertNil(snapshot.weekly)
+        XCTAssertNil(snapshot.resetAt)
+    }
+
+    func testClaudeDesktopAllowsWeeklyOnlySample() async throws {
+        let history = try makeClaudeDesktopHistory(
+            """
+            {"version": 2, "samples": [{"t": 1700000000000, "u": {"sd": 35}}]}
+            """
+        )
+        defer { try? FileManager.default.removeItem(at: history.directory) }
+
+        let snapshot = try await ClaudeDesktopUsageProvider(
+            historyURL: history.url
+        ).fetchUsage()
+
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.weekly?.remainingPercentage, 65)
+        XCTAssertEqual(snapshot.menuBarWindow.remainingPercentage, 65)
+        XCTAssertNil(snapshot.resetAt)
+    }
+
+    func testClaudeDesktopRejectsInvalidHistories() async throws {
+        let histories = [
+            ("corrupt JSON", "not-json"),
+            ("unknown version", #"{"version":3,"samples":[{"t":1700000000000,"u":{"fh":20}}]}"#),
+            ("empty samples", #"{"version":2,"samples":[]}"#),
+            ("missing usage", #"{"version":2,"samples":[{"t":1700000000000,"u":{"fh":null,"sd":null}}]}"#),
+        ]
+
+        for (name, contents) in histories {
+            let history = try makeClaudeDesktopHistory(contents)
+            do {
+                _ = try await ClaudeDesktopUsageProvider(
+                    historyURL: history.url
+                ).fetchUsage()
+                XCTFail("Accepted \(name)")
+            } catch {
+                // Expected: the private Desktop format must fail closed.
+            }
+            try? FileManager.default.removeItem(at: history.directory)
+        }
+    }
+
+    func testClaudeDesktopRejectsMissingHistoryFile() async {
+        let historyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("plan-usage-history.json")
+
+        do {
+            _ = try await ClaudeDesktopUsageProvider(historyURL: historyURL).fetchUsage()
+            XCTFail("Expected a missing-history error.")
+        } catch {
+            // Expected.
+        }
+    }
+
+    func testClaudeCurrentStatusLineSkipsDesktop() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let cache = try makeValidClaudeCache(capturedAt: now)
         defer { try? FileManager.default.removeItem(at: cache.directory) }
 
         let oauthCalls = ClaudeProviderCallCounter()
+        let desktopCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: cache.url,
             oauthFetcher: {
                 oauthCalls.increment()
                 throw InjectedClaudeProviderError("OAuth should not run")
-            }
+            },
+            desktopFetcher: {
+                desktopCalls.increment()
+                throw InjectedClaudeProviderError("Desktop should not run")
+            },
+            now: { now }
         )
 
         let snapshot = try await provider.fetchUsage()
 
         XCTAssertEqual(snapshot.remainingPercentage, 75)
         XCTAssertEqual(oauthCalls.value, 0)
+        XCTAssertEqual(desktopCalls.value, 0)
+    }
+
+    func testClaudeStaleStatusLineUsesCurrentDesktopSnapshot() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let cache = try makeValidClaudeCache(
+            capturedAt: now.addingTimeInterval(-ClaudeUsageProvider.cacheMaximumAge - 1)
+        )
+        defer { try? FileManager.default.removeItem(at: cache.directory) }
+
+        let desktopCalls = ClaudeProviderCallCounter()
+        let desktopSnapshot = makeClaudeDesktopSnapshot(
+            remainingFraction: 0.42,
+            fetchedAt: now.addingTimeInterval(-10)
+        )
+        let provider = ClaudeUsageProvider(
+            cacheURL: cache.url,
+            desktopFetcher: {
+                desktopCalls.increment()
+                return desktopSnapshot
+            },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot, desktopSnapshot)
+        XCTAssertEqual(desktopCalls.value, 1)
+    }
+
+    func testClaudeDesktopFailurePreservesStaleStatusLineSnapshot() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let capturedAt = now.addingTimeInterval(-ClaudeUsageProvider.cacheMaximumAge - 1)
+        let cache = try makeValidClaudeCache(capturedAt: capturedAt)
+        defer { try? FileManager.default.removeItem(at: cache.directory) }
+
+        let desktopCalls = ClaudeProviderCallCounter()
+        let provider = ClaudeUsageProvider(
+            cacheURL: cache.url,
+            desktopFetcher: {
+                desktopCalls.increment()
+                throw InjectedClaudeProviderError("Desktop unavailable")
+            },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(snapshot.remainingPercentage, 75)
+        XCTAssertEqual(snapshot.fetchedAt, capturedAt)
+        XCTAssertEqual(desktopCalls.value, 1)
+    }
+
+    func testClaudeMissingStatusLineFallsBackToDesktop() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let desktopSnapshot = makeClaudeDesktopSnapshot(fetchedAt: now)
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            desktopFetcher: { desktopSnapshot },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage()
+        XCTAssertEqual(snapshot, desktopSnapshot)
+    }
+
+    func testClaudeStatusLineAndDesktopFailurePreservesStatusLineError() async {
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            desktopFetcher: unavailableClaudeDesktopUsage
+        )
+
+        do {
+            _ = try await provider.fetchUsage()
+            XCTFail("Expected all Claude cache sources to fail.")
+        } catch let error as UsageServiceError {
+            guard case .usageCacheUnavailable("Claude") = error else {
+                return XCTFail("Expected statusLine error, got \(error)")
+            }
+        } catch {
+            XCTFail("Expected UsageServiceError, got \(error)")
+        }
+    }
+
+    func testClaudeDesktopCancellationDoesNotFallThrough() async {
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            desktopFetcher: { throw CancellationError() }
+        )
+
+        do {
+            _ = try await provider.fetchUsage()
+            XCTFail("Expected cancellation.")
+        } catch is CancellationError {
+            // Expected: cancellation must not be replaced by the statusLine error.
+        } catch {
+            XCTFail("Expected CancellationError, got \(error)")
+        }
     }
 
     func testClaudeOAuthModeUsesOnlyOAuthWhenAvailable() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let oauthCalls = ClaudeProviderCallCounter()
+        let desktopCalls = ClaudeProviderCallCounter()
         let provider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
             oauthFetcher: {
@@ -383,6 +587,10 @@ final class ProviderParsingTests: XCTestCase {
                     )
                 )
             },
+            desktopFetcher: {
+                desktopCalls.increment()
+                throw InjectedClaudeProviderError("Desktop should not run")
+            },
             now: { now }
         )
 
@@ -392,6 +600,7 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.weekly?.remainingPercentage, 60)
         XCTAssertEqual(snapshot.fetchedAt, now)
         XCTAssertEqual(oauthCalls.value, 1)
+        XCTAssertEqual(desktopCalls.value, 0)
     }
 
     func testClaudeOAuthParsesWeeklyOnlyWindow() throws {
@@ -408,7 +617,7 @@ final class ProviderParsingTests: XCTestCase {
         XCTAssertEqual(snapshot.menuBarWindow.resetAt, resetAt)
     }
 
-    func testClaudeOAuthModeFallsBackOnlyToStatusLine() async throws {
+    func testClaudeOAuthModeUsesCurrentStatusLineBeforeDesktop() async throws {
         let now = Date(timeIntervalSince1970: 1_000)
         let cache = try makeValidClaudeCache(capturedAt: now)
         defer { try? FileManager.default.removeItem(at: cache.directory) }
@@ -417,12 +626,39 @@ final class ProviderParsingTests: XCTestCase {
             cacheURL: cache.url,
             oauthFetcher: {
                 throw InjectedClaudeProviderError("OAuth unavailable")
-            }
+            },
+            desktopFetcher: unavailableClaudeDesktopUsage,
+            now: { now }
         )
 
         let snapshot = try await provider.fetchUsage(mode: .oauth)
 
         XCTAssertEqual(snapshot.remainingPercentage, 75)
+    }
+
+    func testClaudeOAuthAndStatusLineFailureFallsBackToDesktop() async throws {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let oauthCalls = ClaudeProviderCallCounter()
+        let desktopCalls = ClaudeProviderCallCounter()
+        let desktopSnapshot = makeClaudeDesktopSnapshot(fetchedAt: now)
+        let provider = ClaudeUsageProvider(
+            cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
+            oauthFetcher: {
+                oauthCalls.increment()
+                throw InjectedClaudeProviderError("OAuth unavailable")
+            },
+            desktopFetcher: {
+                desktopCalls.increment()
+                return desktopSnapshot
+            },
+            now: { now }
+        )
+
+        let snapshot = try await provider.fetchUsage(mode: .oauth)
+
+        XCTAssertEqual(snapshot, desktopSnapshot)
+        XCTAssertEqual(oauthCalls.value, 1)
+        XCTAssertEqual(desktopCalls.value, 1)
     }
 
     func testClaudeOAuthRequiresUsableWindowAndClampsUtilization() throws {
@@ -461,7 +697,8 @@ final class ProviderParsingTests: XCTestCase {
     func testClaudeOAuthCancellationDoesNotFallThrough() async {
         let provider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: { throw CancellationError() }
+            oauthFetcher: { throw CancellationError() },
+            desktopFetcher: unavailableClaudeDesktopUsage
         )
 
         do {
@@ -478,7 +715,8 @@ final class ProviderParsingTests: XCTestCase {
         let oauthSecret = "oauth-secret-value"
         let oauthProvider = ClaudeUsageProvider(
             cacheURL: URL(fileURLWithPath: "/missing/status-line-cache.json"),
-            oauthFetcher: { throw InjectedClaudeProviderError(oauthSecret) }
+            oauthFetcher: { throw InjectedClaudeProviderError(oauthSecret) },
+            desktopFetcher: unavailableClaudeDesktopUsage
         )
 
         do {
@@ -491,6 +729,7 @@ final class ProviderParsingTests: XCTestCase {
             let description = error.localizedDescription
             XCTAssertTrue(description.contains("OAuth"))
             XCTAssertTrue(description.contains("statusLine"))
+            XCTAssertTrue(description.contains("Desktop"))
             XCTAssertFalse(description.contains(oauthSecret))
         } catch {
             XCTFail("Expected UsageServiceError, got \(error)")
@@ -691,7 +930,24 @@ final class ProviderParsingTests: XCTestCase {
     }
 
     private func makeCacheOnlyClaudeProvider(cacheURL: URL) -> ClaudeUsageProvider {
-        ClaudeUsageProvider(cacheURL: cacheURL)
+        ClaudeUsageProvider(
+            cacheURL: cacheURL,
+            desktopFetcher: unavailableClaudeDesktopUsage
+        )
+    }
+
+    private func makeClaudeDesktopHistory(
+        _ contents: String
+    ) throws -> (directory: URL, url: URL) {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        let historyURL = directory.appendingPathComponent("plan-usage-history.json")
+        try Data(contents.utf8).write(to: historyURL, options: .atomic)
+        return (directory, historyURL)
     }
 
     private func makeValidClaudeCache(
@@ -737,6 +993,25 @@ private struct InjectedClaudeProviderError: LocalizedError, Sendable {
     }
 
     var errorDescription: String? { message }
+}
+
+private func unavailableClaudeDesktopUsage() async throws -> UsageSnapshot {
+    throw InjectedClaudeProviderError("Desktop unavailable")
+}
+
+private func makeClaudeDesktopSnapshot(
+    remainingFraction: Double = 0.65,
+    fetchedAt: Date
+) -> UsageSnapshot {
+    UsageSnapshot(
+        provider: .claude,
+        fiveHour: UsageLimitWindow(
+            remainingFraction: remainingFraction,
+            resetAt: nil
+        ),
+        weekly: nil,
+        fetchedAt: fetchedAt
+    )
 }
 
 private final class ClaudeProviderCallCounter: @unchecked Sendable {

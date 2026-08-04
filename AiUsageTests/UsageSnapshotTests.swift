@@ -119,4 +119,25 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertFalse(stale.isCurrent(at: now, maximumAge: 900))
         XCTAssertFalse(expired.isCurrent(at: now, maximumAge: 900))
     }
+
+    func testCurrentSnapshotWithoutResetUsesCaptureAge() {
+        let now = Date(timeIntervalSince1970: 10_000)
+        let window = UsageLimitWindow(remainingFraction: 0.5, resetAt: nil)
+        let fresh = UsageSnapshot(
+            provider: .claude,
+            fiveHour: window,
+            weekly: nil,
+            fetchedAt: now.addingTimeInterval(-899)
+        )
+        let stale = UsageSnapshot(
+            provider: .claude,
+            fiveHour: window,
+            weekly: nil,
+            fetchedAt: now.addingTimeInterval(-901)
+        )
+
+        XCTAssertNil(fresh.resetAt)
+        XCTAssertTrue(fresh.isCurrent(at: now, maximumAge: 900))
+        XCTAssertFalse(stale.isCurrent(at: now, maximumAge: 900))
+    }
 }

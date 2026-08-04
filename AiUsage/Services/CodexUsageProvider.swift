@@ -394,8 +394,11 @@ final actor CodexUsageProvider: UsageFetching {
                 try Task.checkCancellation()
                 let response = try await client.fetchRateLimits()
                 let candidate = try makeSnapshot(from: response)
-                if candidate.resetAt > selectedSnapshot.resetAt
-                    || (candidate.resetAt == selectedSnapshot.resetAt
+                guard let candidateResetAt = candidate.resetAt,
+                      let selectedResetAt = selectedSnapshot.resetAt
+                else { continue }
+                if candidateResetAt > selectedResetAt
+                    || (candidateResetAt == selectedResetAt
                         && candidate.fetchedAt > selectedSnapshot.fetchedAt)
                 {
                     selectedSnapshot = candidate

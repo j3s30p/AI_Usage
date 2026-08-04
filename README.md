@@ -19,12 +19,13 @@
 
 ![AiUsage showing live usage](docs/images/aiusage-live-usage.png)
 
-AiUsage is a native macOS menu bar app that shows the current usage limits reported by Codex and Claude in one place. Check the remaining percentage and reset time without switching apps or running a command.
+AiUsage is a native macOS menu bar app that shows the current usage limits reported by Codex and Claude in one place. Check the remaining percentage and available reset times without switching apps or running a command.
 
 ## Features
 
 - **Codex and Claude together** — See both providers in one menu bar app.
-- **Five-hour and weekly limits** — Check remaining percentages and reset times at a glance.
+- **Five-hour and weekly limits** — Check remaining percentages and available reset times at a glance.
+- **Claude Desktop support** — See Claude usage without installing or connecting Claude Code.
 - **A menu bar that fits** — Choose names or logos, percentages, refresh timing, and optional usage-based ring colors.
 - **Reliable background monitoring** — Keep the latest valid value through temporary failures and optionally launch at login.
 
@@ -56,9 +57,10 @@ Release builds are signed with a Developer ID Application certificate and notari
 1. Select AiUsage in the menu bar and open **Settings**.
 2. Use the **General** tab for app behavior, Claude connections, and current/latest version information. Use the **Menu Bar** tab to choose providers, display style, refresh interval, and optional usage ring colors.
 3. Codex works without another connection step when the local Codex CLI is signed in.
-4. For Claude, keep the recommended `statusLine cache` mode, select **Connect Claude statusLine…** once, and approve the change. You do not need to enter commands or edit settings files manually.
+4. If you use only Claude Desktop, keep the recommended `Local caches` mode. No statusLine connection is required.
+5. If you use Claude Code, select **Connect Claude statusLine…** once and approve the change. You do not need to enter commands or edit settings files manually.
 
-Claude statusLine provides fresh usage after Claude Code's next response. AiUsage preserves a compatible existing statusLine and restores it when disconnected. Experimental OAuth mode is also available for compatible Claude Code credentials.
+In Local caches mode, AiUsage uses current Claude Code statusLine data first and automatically falls back to Claude Desktop's local plan usage history. Desktop history provides percentages but no reset times. It is normally recorded about every five minutes while Claude Desktop is running, but no maximum update interval is guaranteed. AiUsage preserves a compatible existing statusLine and restores it when disconnected. Experimental OAuth mode is also available for compatible Claude Code credentials.
 
 AiUsage checks its signed Sparkle appcast at launch and every 24 hours. When a newer version is available, an update button appears in the menu bar popover and opens Sparkle's verified update flow.
 
@@ -66,7 +68,8 @@ AiUsage checks its signed Sparkle appcast at launch and every 24 hours. When a n
 
 AiUsage has no server of its own and includes no analytics SDK.
 
-- Codex and Claude statusLine data are read locally.
+- Codex data, Claude statusLine data, and Claude Desktop plan usage history are read locally.
+- Claude Desktop history contains an organization identifier, but AiUsage ignores it and does not store or log it.
 - Prompts, conversations, account emails, session IDs, and working directories are not collected or logged.
 - Screen Recording and Accessibility permissions are not required.
 
@@ -76,7 +79,7 @@ See [Architecture and data sources](docs/architecture.md) for the full data flow
 
 - macOS 14 Sonoma or later
 - Codex display: Codex CLI installed and signed in
-- Claude display: Claude Code installed and signed in to a Claude.ai Pro or Max account
+- Claude display: Claude Desktop or Claude Code installed and signed in to a Claude.ai Pro or Max account
 
 API-key sessions without a shared subscription limit are not supported.
 
