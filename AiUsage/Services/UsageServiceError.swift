@@ -38,7 +38,7 @@ enum UsageServiceError: LocalizedError, Sendable {
             String(format: String(localized: "No available usage limit was found for %@."), name)
         case .usageCacheUnavailable(let name):
             String(
-                format: String(localized: "%@ statusLine cache is missing. Restart Claude Code, send a message, and refresh."),
+                format: String(localized: "%@ usage data is unavailable. Open Claude Desktop or send a message in Claude Code, then refresh."),
                 name
             )
         case .usageCacheWaiting:
@@ -46,7 +46,7 @@ enum UsageServiceError: LocalizedError, Sendable {
         case .usageLimitsUnavailable:
             String(localized: "Claude 사용 한도는 Claude.ai Pro/Max 로그인에서만 제공됩니다. API 키 세션은 지원되지 않습니다.")
         case .claudeOAuthAndCacheUnavailable:
-            String(localized: "Claude OAuth를 무팝업으로 읽지 못했고 statusLine 캐시도 없습니다. Keychain 연결을 확인하거나 Claude Code에서 메시지를 보낸 뒤 다시 시도해 주세요.")
+            String(localized: "Claude OAuth, statusLine 캐시, Desktop 사용 기록을 모두 사용할 수 없습니다. Keychain 연결을 확인하거나 Claude Desktop을 열고 다시 시도해 주세요.")
         case .serviceUnavailable(let name):
             String(format: String(localized: "%@ usage service could not be reached."), name)
         }

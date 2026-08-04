@@ -20,13 +20,14 @@
 ![AiUsage 실제 사용 화면](docs/images/aiusage-live-usage.png)
 
 AiUsage는 Codex와 Claude가 제공하는 현재 사용 한도를 한곳에 보여 주는 네이티브 macOS
-메뉴바 앱입니다. 앱을 전환하거나 명령어를 입력하지 않아도 남은 비율과 초기화 시각을 확인할
+메뉴바 앱입니다. 앱을 전환하거나 명령어를 입력하지 않아도 남은 비율과 제공되는 초기화 시각을 확인할
 수 있습니다.
 
 ## 주요 기능
 
 - **Codex와 Claude를 한곳에서** — 두 서비스의 사용량을 하나의 메뉴바 앱에서 확인합니다.
-- **5시간·주간 한도 확인** — 남은 비율과 초기화 시각을 한눈에 보여 줍니다.
+- **5시간·주간 한도 확인** — 남은 비율과 제공되는 초기화 시각을 한눈에 보여 줍니다.
+- **Claude Desktop 지원** — Claude Code를 설치하거나 연결하지 않아도 Claude 사용량을 확인합니다.
 - **내게 맞는 메뉴바** — 서비스 이름이나 로고, 퍼센트, 갱신 주기와 사용량별 도넛 색상을 선택할 수 있습니다.
 - **안정적인 백그라운드 확인** — 일시적인 실패에도 최근 정상값을 유지하고 로그인 시 자동으로 실행할 수 있습니다.
 
@@ -60,11 +61,14 @@ Intel Mac을 모두 지원합니다.
 1. 메뉴바의 AiUsage를 눌러 **설정**을 엽니다.
 2. **일반** 탭에서 앱 동작과 Claude 연결을 설정하고 현재 버전과 최신 버전을 확인합니다. **메뉴바** 탭에서는 표시할 서비스, 표시 방식, 갱신 주기와 사용량별 도넛 색상을 선택합니다.
 3. Codex는 로컬 Codex CLI에 로그인되어 있으면 별도 연결 없이 조회합니다.
-4. Claude는 기본값인 `statusLine 캐시`에서 **Claude statusLine 연결…**을 한 번 누르고 변경에
-   동의하세요. 명령어 입력이나 설정 파일 직접 수정은 필요하지 않습니다.
+4. Claude Desktop만 사용한다면 기본값인 `로컬 캐시`를 유지하세요. statusLine 연결은 필요 없습니다.
+5. Claude Code를 사용한다면 **Claude statusLine 연결…**을 한 번 누르고 변경에 동의하세요.
+   명령어 입력이나 설정 파일 직접 수정은 필요하지 않습니다.
 
-Claude statusLine은 연결 후 Claude Code의 다음 응답부터 최신 사용량을 전달합니다. 기존
-statusLine을 안전하게 보존하고 연결 해제 시 복원합니다. 호환되는 Claude Code 자격이 있다면
+로컬 캐시 모드에서는 최신 Claude Code statusLine 데이터를 먼저 사용하고, 없으면 Claude Desktop의
+로컬 플랜 사용 기록을 자동으로 확인합니다. Desktop 기록에는 사용률만 있고 초기화 시각은 없습니다.
+Claude Desktop이 실행 중이면 보통 약 5분마다 기록하지만 최대 갱신 간격은 보장되지 않습니다.
+기존 statusLine은 안전하게 보존하고 연결 해제 시 복원합니다. 호환되는 Claude Code 자격이 있다면
 실험적 OAuth 모드도 사용할 수 있습니다.
 
 AiUsage는 실행 시점과 이후 24시간마다 서명된 Sparkle appcast에서 최신 버전을 확인합니다. 새 버전이 있으면 메뉴바 팝오버에 업데이트 버튼이 나타나며, 버튼을 누르면 Sparkle의 검증된 업데이트 절차가 열립니다.
@@ -73,7 +77,8 @@ AiUsage는 실행 시점과 이후 24시간마다 서명된 Sparkle appcast에�
 
 AiUsage는 자체 서버나 분석 SDK를 사용하지 않습니다.
 
-- Codex와 Claude statusLine 데이터는 로컬에서 읽습니다.
+- Codex 데이터, Claude statusLine 데이터와 Claude Desktop 플랜 사용 기록은 로컬에서 읽습니다.
+- Claude Desktop 기록에 포함된 조직 식별자는 무시하며 저장하거나 로그에 남기지 않습니다.
 - 프롬프트, 대화 내용, 계정 이메일, 세션 ID와 작업 경로를 수집하거나 기록하지 않습니다.
 - 화면 기록과 손쉬운 사용 권한은 필요하지 않습니다.
 
@@ -84,7 +89,7 @@ AiUsage는 자체 서버나 분석 SDK를 사용하지 않습니다.
 
 - macOS 14 Sonoma 이상
 - Codex 표시: Codex CLI 설치 및 로그인
-- Claude 표시: Claude Code 설치 및 Claude.ai Pro 또는 Max 로그인
+- Claude 표시: Claude Desktop 또는 Claude Code 설치 및 Claude.ai Pro 또는 Max 로그인
 
 공유 구독 한도가 없는 Claude API 키 세션은 지원하지 않습니다.
 

@@ -125,7 +125,7 @@ final class CodexUsageProviderTests: XCTestCase {
         let snapshot = try await provider.fetchUsage()
 
         XCTAssertEqual(snapshot.remainingPercentage, 77)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_003_000)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_900_003_000)
         XCTAssertEqual(client.fetchCount, 3)
         provider.shutdown()
     }
@@ -141,7 +141,7 @@ final class CodexUsageProviderTests: XCTestCase {
         let snapshot = try await provider.fetchUsage()
 
         XCTAssertEqual(snapshot.remainingPercentage, 100)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_000_200)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_900_000_200)
         XCTAssertEqual(client.fetchCount, 3)
         provider.shutdown()
     }
@@ -158,7 +158,7 @@ final class CodexUsageProviderTests: XCTestCase {
         let snapshot = try await provider.fetchUsage()
 
         XCTAssertEqual(snapshot.remainingPercentage, 100)
-        XCTAssertEqual(snapshot.resetAt.timeIntervalSince1970, 1_900_000_000)
+        XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_900_000_000)
         XCTAssertEqual(client.fetchCount, 3)
         provider.shutdown()
     }

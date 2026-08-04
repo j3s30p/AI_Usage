@@ -227,11 +227,13 @@ final class AppModel {
         candidate: UsageLimitWindow,
         at fetchedAt: Date
     ) -> Bool {
-        guard previous.resetAt > fetchedAt,
+        guard let previousResetAt = previous.resetAt,
+            let candidateResetAt = candidate.resetAt,
+            previousResetAt > fetchedAt,
             candidate.remainingFraction > previous.remainingFraction
         else { return false }
 
-        return previous.resetAt.timeIntervalSince(candidate.resetAt)
+        return previousResetAt.timeIntervalSince(candidateResetAt)
             > Self.codexResetRegressionTolerance
     }
 }

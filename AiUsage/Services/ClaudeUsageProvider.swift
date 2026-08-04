@@ -2,17 +2,20 @@ import Foundation
 
 struct ClaudeUsageProvider: UsageFetching {
     typealias OAuthFetcher = @Sendable () async throws -> ClaudeOAuthUsageResponse
+    typealias DesktopFetcher = @Sendable () async throws -> UsageSnapshot
 
     let provider = UsageProvider.claude
     static let cacheMaximumAge: TimeInterval = 15 * 60
 
     private let cacheURL: URL
     private let oauthFetcher: OAuthFetcher
+    private let desktopFetcher: DesktopFetcher
     private let now: @Sendable () -> Date
 
     init(
         cacheURL: URL = Self.defaultCacheURL,
         oauthFetcher: OAuthFetcher? = nil,
+        desktopFetcher: DesktopFetcher? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.cacheURL = cacheURL
@@ -21,6 +24,12 @@ struct ClaudeUsageProvider: UsageFetching {
         } else {
             let client = ClaudeOAuthUsageClient()
             self.oauthFetcher = { try await client.fetchUsage() }
+        }
+        if let desktopFetcher {
+            self.desktopFetcher = desktopFetcher
+        } else {
+            let provider = ClaudeDesktopUsageProvider()
+            self.desktopFetcher = { try await provider.fetchUsage() }
         }
         self.now = now
     }
@@ -33,13 +42,13 @@ struct ClaudeUsageProvider: UsageFetching {
         try Task.checkCancellation()
         switch mode {
         case .statusLine:
-            return try await fetchCachedUsage()
+            return try await fetchStatusLineOrDesktop()
         case .oauth:
-            return try await fetchOAuthOrCachedUsage()
+            return try await fetchOAuthOrFallbackUsage()
         }
     }
 
-    private func fetchOAuthOrCachedUsage() async throws -> UsageSnapshot {
+    private func fetchOAuthOrFallbackUsage() async throws -> UsageSnapshot {
         try Task.checkCancellation()
         do {
             let response = try await oauthFetcher()
@@ -48,20 +57,46 @@ struct ClaudeUsageProvider: UsageFetching {
             try Self.rethrowCancellation(error)
         }
 
-        return try await fetchFallbackCache(
+        return try await fetchStatusLineOrDesktop(
             unavailableError: .claudeOAuthAndCacheUnavailable
         )
     }
 
-    private func fetchFallbackCache(
-        unavailableError: UsageServiceError
+    private func fetchStatusLineOrDesktop(
+        unavailableError: UsageServiceError? = nil
     ) async throws -> UsageSnapshot {
         try Task.checkCancellation()
         do {
-            return try await fetchCachedUsage()
-        } catch {
-            try Self.rethrowCancellation(error)
-            throw unavailableError
+            let cached = try await fetchCachedUsage()
+            let currentDate = now()
+            guard !cached.isCurrent(
+                at: currentDate,
+                maximumAge: Self.cacheMaximumAge
+            ) else { return cached }
+
+            do {
+                let desktop = try await desktopFetcher()
+                try Task.checkCancellation()
+                if desktop.isCurrent(
+                    at: currentDate,
+                    maximumAge: Self.cacheMaximumAge
+                ) || desktop.fetchedAt > cached.fetchedAt {
+                    return desktop
+                }
+            } catch {
+                try Self.rethrowCancellation(error)
+            }
+            return cached
+        } catch let cacheError {
+            try Self.rethrowCancellation(cacheError)
+            do {
+                let desktop = try await desktopFetcher()
+                try Task.checkCancellation()
+                return desktop
+            } catch {
+                try Self.rethrowCancellation(error)
+                throw unavailableError ?? cacheError
+            }
         }
     }
 
@@ -185,7 +220,7 @@ struct ClaudeUsageProvider: UsageFetching {
         )
     }
 
-    private static func remainingFraction(for usedPercentage: Double) -> Double {
+    static func remainingFraction(for usedPercentage: Double) -> Double {
         let utilization = min(max(usedPercentage, 0), 100)
         return 1 - (utilization / 100)
     }

@@ -201,7 +201,7 @@ struct SettingsView: View {
         switch selectedClaudeUsageMode {
         case .statusLine:
             Label(
-                "Claude Code가 남긴 statusLine 캐시만 읽습니다. 아래 연결 버튼을 한 번 누르면 터미널이나 설정 파일 수정 없이 자동으로 구성됩니다.",
+                "먼저 Claude Code의 statusLine 캐시를 읽고, 최신 값이 없으면 Claude Desktop의 로컬 사용 기록을 확인합니다. Desktop만 사용한다면 아래 statusLine 연결은 필요 없으며 초기화 시각은 표시되지 않습니다.",
                 systemImage: "checkmark.shield"
             )
             .font(.caption)
@@ -209,7 +209,7 @@ struct SettingsView: View {
 
         case .oauth:
             Label(
-                "OAuth 모드를 선택하면 먼저 Claude Code 인증 파일을 확인하고, 사용할 수 없을 때만 Keychain 승인을 요청합니다. 이후 백그라운드 조회는 팝업 없이 실행하고, 실패하면 statusLine 캐시로 돌아갑니다. 비공개 API라 중단될 수 있습니다.",
+                "OAuth 모드를 선택하면 먼저 Claude Code 인증 파일을 확인하고, 필요할 때만 Keychain 승인을 요청합니다. 이후 백그라운드 조회는 팝업 없이 실행하며, 실패하면 statusLine 캐시와 Claude Desktop 사용 기록을 차례로 확인합니다. 비공개 API라 중단될 수 있습니다.",
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.caption)
