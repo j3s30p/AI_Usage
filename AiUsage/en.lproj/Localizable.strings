@@ -141,7 +141,7 @@
 "Codex 사용량을 가져오지 못했습니다." = "Codex usage could not be loaded.";
 "사용량 응답을 받지 못했습니다." = "No usage response was received.";
 "사용량을 가져오지 못했습니다." = "Usage could not be loaded.";
-"%@ CLI was not found. Install it and sign in first." = "%@ CLI was not found. Install it and sign in first.";
+"%@ was not found. Install or sign in to %@ Desktop, or install the %@ CLI, then try again." = "%@ was not found. Install or sign in to %@ Desktop, or install the %@ CLI, then try again.";
 "%@ could not be launched." = "%@ could not be launched.";
 "%@ connection ended unexpectedly." = "%@ connection ended unexpectedly.";
 "%@ usage request timed out." = "%@ usage request timed out.";

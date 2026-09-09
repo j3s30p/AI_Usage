@@ -11,7 +11,7 @@ struct CodexAppServerNotification: Sendable, Equatable {
 final class CodexAppServerClient: @unchecked Sendable {
     private static let defaultArguments = [
         "-s", "read-only",
-        "-a", "untrusted",
+        "-a", "on-request",
         "app-server",
         "--listen", "stdio://",
     ]
