@@ -34,7 +34,7 @@ struct ClaudeDesktopUsageProvider: UsageFetching {
         )
     }
 
-    private static let defaultHistoryURL = FileManager.default.homeDirectoryForCurrentUser
+    static let defaultHistoryURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/Claude", isDirectory: true)
         .appendingPathComponent("plan-usage-history.json", isDirectory: false)
 

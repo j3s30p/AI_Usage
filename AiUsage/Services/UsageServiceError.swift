@@ -18,8 +18,8 @@ enum UsageServiceError: LocalizedError, Sendable {
         switch self {
         case .executableNotFound(let name):
             String(
-                format: String(localized: "%@ CLI was not found. Install it and sign in first."),
-                name
+                format: String(localized: "%@ was not found. Install or sign in to %@ Desktop, or install the %@ CLI, then try again."),
+                name, name, name
             )
         case .processStartFailed(let name):
             String(format: String(localized: "%@ could not be launched."), name)

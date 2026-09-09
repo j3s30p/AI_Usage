@@ -458,6 +458,103 @@ final class AppModelTests: XCTestCase {
         await monitorTask.value
     }
 
+    func testMonitorRefreshesClaudeOnLocalFileChangeWithoutWaitingForPolling() async {
+        let now = Date(timeIntervalSince1970: 80_000)
+        let initial = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.32,
+            fetchedAt: now
+        )
+        let changed = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.21,
+            fetchedAt: now.addingTimeInterval(1)
+        )
+        let repository = StreamingUsageRepository(responses: [
+            [.claude: .success(initial)],
+            [.claude: .success(changed)],
+        ])
+        let model = AppModel(repository: repository)
+        let monitorTask = Task {
+            await model.monitor(
+                providers: [.claude],
+                refreshInterval: .seconds(3_600),
+                claudeUsageMode: .statusLine
+            )
+        }
+
+        let initialReady = await waitUntil {
+            repository.fetchCount == 1 && repository.claudeFileChangeSubscriptions == 1
+        }
+        XCTAssertTrue(initialReady)
+        repository.sendClaudeFileChange()
+        let changedReady = await waitUntil {
+            model.state(for: .claude).snapshot == changed
+        }
+        XCTAssertTrue(changedReady)
+
+        monitorTask.cancel()
+        repository.finishUpdates()
+        repository.finishClaudeFileChanges()
+        await monitorTask.value
+    }
+
+    func testMonitorDoesNotSubscribeToClaudeFilesInOAuthMode() async {
+        let repository = StreamingUsageRepository(responses: [
+            [.claude: .success(makeSnapshot(
+                provider: .claude,
+                remainingFraction: 0.32,
+                fetchedAt: Date()
+            ))],
+        ])
+        let model = AppModel(repository: repository)
+        let monitorTask = Task {
+            await model.monitor(
+                providers: [.claude],
+                refreshInterval: .seconds(3_600),
+                claudeUsageMode: .oauth
+            )
+        }
+
+        let initialReady = await waitUntil { repository.fetchCount == 1 }
+        XCTAssertTrue(initialReady)
+        repository.sendClaudeFileChange()
+        try? await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(repository.fetchCount, 1)
+        XCTAssertEqual(repository.claudeFileChangeSubscriptions, 0)
+
+        monitorTask.cancel()
+        await monitorTask.value
+    }
+
+    func testClaudeFileRefreshDoesNotDiscardInFlightCodexRefresh() async {
+        let now = Date(timeIntervalSince1970: 90_000)
+        let codex = makeSnapshot(
+            provider: .codex,
+            remainingFraction: 0.52,
+            fetchedAt: now
+        )
+        let claude = makeSnapshot(
+            provider: .claude,
+            remainingFraction: 0.41,
+            fetchedAt: now
+        )
+        let repository = CrossProviderRaceRepository(codex: codex, claude: claude)
+        let model = AppModel(repository: repository)
+        let codexTask = Task { await model.refresh(providers: [.codex]) }
+
+        for _ in 0..<200 where !(await repository.codexStarted) {
+            await Task.yield()
+        }
+        let codexStarted = await repository.codexStarted
+        XCTAssertTrue(codexStarted)
+        await model.refresh(providers: [.claude])
+        await repository.openCodex()
+        await codexTask.value
+
+        XCTAssertEqual(model.state(for: .codex).snapshot, codex)
+    }
+
     func testModelForwardsStopAndShutdownToRepository() {
         let repository = StreamingUsageRepository(responses: [])
         let model = AppModel(repository: repository)
@@ -534,14 +631,20 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
     private var storedStoppedProviders: Set<UsageProvider> = []
     private var storedDidShutdown = false
     private var storedLastUpdateRefreshInterval: Duration?
+    private var storedClaudeFileChangeSubscriptions = 0
     private let updateStream: AsyncStream<ProviderUsageUpdate>
     private let updateContinuation: AsyncStream<ProviderUsageUpdate>.Continuation
+    private let claudeFileChangeStream: AsyncStream<Void>
+    private let claudeFileChangeContinuation: AsyncStream<Void>.Continuation
 
     init(responses: [[UsageProvider: ProviderUsageResult]]) {
         self.responses = responses
         let stream = AsyncStream<ProviderUsageUpdate>.makeStream()
         updateStream = stream.stream
         updateContinuation = stream.continuation
+        let claudeStream = AsyncStream<Void>.makeStream()
+        claudeFileChangeStream = claudeStream.stream
+        claudeFileChangeContinuation = claudeStream.continuation
     }
 
     var fetchCount: Int {
@@ -562,6 +665,10 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
 
     var lastUpdateRefreshInterval: Duration? {
         lock.withLock { storedLastUpdateRefreshInterval }
+    }
+
+    var claudeFileChangeSubscriptions: Int {
+        lock.withLock { storedClaudeFileChangeSubscriptions }
     }
 
     func fetchUsage(
@@ -605,6 +712,11 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
         return updateStream
     }
 
+    func claudeUsageFileChanges() -> AsyncStream<Void> {
+        lock.withLock { storedClaudeFileChangeSubscriptions += 1 }
+        return claudeFileChangeStream
+    }
+
     func stopMonitoring(providers: Set<UsageProvider>) {
         lock.withLock {
             storedStoppedProviders.formUnion(providers)
@@ -626,6 +738,14 @@ private final class StreamingUsageRepository: UsageRepositoryProtocol, @unchecke
 
     func finishUpdates() {
         updateContinuation.finish()
+    }
+
+    func sendClaudeFileChange() {
+        claudeFileChangeContinuation.yield()
+    }
+
+    func finishClaudeFileChanges() {
+        claudeFileChangeContinuation.finish()
     }
 }
 
@@ -688,5 +808,35 @@ private actor DelayedClaudeRepository: UsageRepositoryProtocol {
             return [.codex: .success(codex)]
         }
         return [:]
+    }
+}
+
+private actor CrossProviderRaceRepository: UsageRepositoryProtocol {
+    let codex: UsageSnapshot
+    let claude: UsageSnapshot
+    let gate = AsyncGate()
+    private(set) var codexStarted = false
+
+    init(codex: UsageSnapshot, claude: UsageSnapshot) {
+        self.codex = codex
+        self.claude = claude
+    }
+
+    func fetchUsage(
+        for providers: Set<UsageProvider>
+    ) async -> [UsageProvider: ProviderUsageResult] {
+        if providers.contains(.codex) {
+            codexStarted = true
+            await gate.wait()
+            return [.codex: .success(codex)]
+        }
+        if providers.contains(.claude) {
+            return [.claude: .success(claude)]
+        }
+        return [:]
+    }
+
+    func openCodex() async {
+        await gate.open()
     }
 }

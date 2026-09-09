@@ -6,19 +6,22 @@ struct MenuBarStatusSegment: Equatable, Sendable {
     let logoSourceInsetFraction: CGFloat
     let remainingFraction: Double?
     let percentageText: String?
+    let isStale: Bool
 
     init(
         name: String,
         logoAssetName: String? = nil,
         logoSourceInsetFraction: CGFloat = 0,
         remainingFraction: Double?,
-        percentageText: String?
+        percentageText: String?,
+        isStale: Bool = false
     ) {
         self.name = name
         self.logoAssetName = logoAssetName
         self.logoSourceInsetFraction = logoSourceInsetFraction
         self.remainingFraction = remainingFraction
         self.percentageText = percentageText
+        self.isStale = isStale
     }
 }
 
@@ -67,7 +70,9 @@ enum MenuBarStatusImageRenderer {
         let ringCenters = ringCenterXPositions(segments, attributes: attributes)
         let ringOverlays = zip(segments, ringCenters).compactMap { pair -> MenuBarRingOverlay? in
             let (segment, x) = pair
-            guard let remainingFraction = segment.remainingFraction else { return nil }
+            guard !segment.isStale,
+                let remainingFraction = segment.remainingFraction
+            else { return nil }
             let isZero = RemainingRing.isDisplayedAsZero(remainingFraction)
             guard usesUsageRingColors || isZero else { return nil }
             return MenuBarRingOverlay(
@@ -95,7 +100,7 @@ enum MenuBarStatusImageRenderer {
                 )
                 x += markWidth + itemSpacing
 
-                drawDot(atX: x)
+                drawDot(atX: x, isStale: segment.isStale)
                 x += dotSize + itemSpacing
 
                 let ringRect = NSRect(
@@ -107,7 +112,7 @@ enum MenuBarStatusImageRenderer {
                 drawRing(
                     in: ringRect,
                     remainingFraction: segment.remainingFraction,
-                    drawsAvailableRing: !usesUsageRingColors
+                    drawsAvailableRing: !usesUsageRingColors || segment.isStale
                 )
                 x += ringSize
 
@@ -241,7 +246,7 @@ enum MenuBarStatusImageRenderer {
         )
     }
 
-    private static func drawDot(atX x: CGFloat) {
+    private static func drawDot(atX x: CGFloat, isStale: Bool) {
         let rect = NSRect(
             x: x,
             y: (canvasHeight - dotSize) / 2,
@@ -249,7 +254,18 @@ enum MenuBarStatusImageRenderer {
             height: dotSize
         )
         NSColor.white.withAlphaComponent(0.68).setFill()
-        NSBezierPath(ovalIn: rect).fill()
+        if isStale {
+            let mark = NSBezierPath()
+            mark.move(to: NSPoint(x: rect.midX, y: rect.midY - 3))
+            mark.line(to: NSPoint(x: rect.midX, y: rect.midY + 2))
+            mark.lineWidth = 1
+            mark.stroke()
+            NSBezierPath(
+                ovalIn: NSRect(x: rect.midX - 0.5, y: rect.midY - 5, width: 1, height: 1)
+            ).fill()
+        } else {
+            NSBezierPath(ovalIn: rect).fill()
+        }
     }
 
     private static func drawProviderSeparator(atX x: CGFloat) {

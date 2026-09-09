@@ -15,6 +15,8 @@ protocol UsageRepositoryProtocol: Sendable {
         refreshInterval: Duration
     ) -> AsyncStream<ProviderUsageUpdate>
 
+    func claudeUsageFileChanges() -> AsyncStream<Void>
+
     func stopMonitoring(providers: Set<UsageProvider>)
     func shutdown()
 }
@@ -31,6 +33,12 @@ extension UsageRepositoryProtocol {
         for providers: Set<UsageProvider>,
         refreshInterval: Duration
     ) -> AsyncStream<ProviderUsageUpdate> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func claudeUsageFileChanges() -> AsyncStream<Void> {
         AsyncStream { continuation in
             continuation.finish()
         }

@@ -76,6 +76,17 @@ struct UsageRepository: UsageRepositoryProtocol, Sendable {
         }
     }
 
+    func claudeUsageFileChanges() -> AsyncStream<Void> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let watcher = ClaudeUsageFileWatcher(paths: [
+                ClaudeUsageProvider.defaultCacheURL,
+                ClaudeDesktopUsageProvider.defaultHistoryURL,
+            ])
+            watcher.start(continuation)
+            continuation.onTermination = { _ in watcher.stop() }
+        }
+    }
+
     func stopMonitoring(providers: Set<UsageProvider>) {
         guard providers.contains(.codex) else { return }
         codexProvider.stopMonitoring()

@@ -238,6 +238,35 @@ final class MenuBarStatusImageRendererTests: XCTestCase {
         )
     }
 
+    func testStaleSegmentKeepsValueButUsesNeutralRingAndWarningMarker() {
+        let fresh = MenuBarStatusImageRenderer.makeRendering(
+            segments: [
+                MenuBarStatusSegment(
+                    name: "Codex",
+                    remainingFraction: 0.30,
+                    percentageText: "30%"
+                ),
+            ],
+            usesUsageRingColors: true
+        )
+        let staleSegment = MenuBarStatusSegment(
+            name: "Codex",
+            remainingFraction: 0.30,
+            percentageText: "30%",
+            isStale: true
+        )
+        let stale = MenuBarStatusImageRenderer.makeRendering(
+            segments: [staleSegment],
+            usesUsageRingColors: true
+        )
+
+        XCTAssertEqual(staleSegment.remainingFraction, 0.30)
+        XCTAssertTrue(staleSegment.isStale)
+        XCTAssertTrue(stale.ringOverlays.isEmpty)
+        XCTAssertEqual(stale.image.size, fresh.image.size)
+        XCTAssertNotEqual(stale.image.tiffRepresentation, fresh.image.tiffRepresentation)
+    }
+
     func testOfficialLogoModeUsesBundledVectorAssetAndLessWidth() throws {
         XCTAssertNotNil(NSImage(named: NSImage.Name("CodexLogo")))
         XCTAssertNotNil(NSImage(named: NSImage.Name("ClaudeLogo")))

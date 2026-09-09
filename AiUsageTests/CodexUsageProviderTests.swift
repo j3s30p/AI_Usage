@@ -3,9 +3,10 @@ import XCTest
 @testable import AiUsage
 
 final class CodexUsageProviderTests: XCTestCase {
-    func testMonitoringReusesOneClientForInitialAndPeriodicReads() async throws {
-        let client = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 20))])
-        let factory = FakeCodexClientFactory(clients: [client])
+    func testMonitoringUsesFreshClientPerPollAndReleasesIdleClient() async throws {
+        let first = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 20))])
+        let second = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 21))])
+        let factory = FakeCodexClientFactory(clients: [first, second])
         let provider = CodexUsageProvider(
             clientFactory: { try factory.makeClient() },
             reconnectBackoff: [.milliseconds(10)]
@@ -16,19 +17,29 @@ final class CodexUsageProviderTests: XCTestCase {
             into: recorder
         )
 
+        let receivedInitialUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedInitialUpdate)
+        let releasedFirstClient = await waitUntil { first.shutdownCount == 1 }
+        XCTAssertTrue(releasedFirstClient)
+        XCTAssertFalse(first.isRunning)
+        XCTAssertEqual(factory.creationCount, 1)
+
         let receivedPeriodicUpdate = await waitUntil { recorder.successCount >= 2 }
         XCTAssertTrue(receivedPeriodicUpdate)
-        XCTAssertEqual(factory.creationCount, 1)
-        XCTAssertEqual(client.initializeCount, 1)
-        XCTAssertGreaterThanOrEqual(client.fetchCount, 2)
+        XCTAssertEqual(factory.creationCount, 2)
+        XCTAssertEqual(first.initializeCount, 1)
+        XCTAssertEqual(second.initializeCount, 1)
+        XCTAssertEqual(first.fetchCount, 1)
+        XCTAssertEqual(second.fetchCount, 1)
+        XCTAssertEqual(recorder.failureCount, 0)
 
         consumer.cancel()
         provider.stopMonitoring()
-        let stoppedClient = await waitUntil { client.shutdownCount == 1 }
+        let stoppedClient = await waitUntil { second.shutdownCount == 1 }
         XCTAssertTrue(stoppedClient)
     }
 
-    func testRateLimitNotificationsCoalesceIntoOneAuthoritativeRead() async throws {
+    func testReleasedClientDoesNotTurnIntentionalCloseIntoFailureOrRetry() async throws {
         let client = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 10))])
         let factory = FakeCodexClientFactory(clients: [client])
         let provider = CodexUsageProvider(
@@ -40,19 +51,153 @@ final class CodexUsageProviderTests: XCTestCase {
             provider.updates(refreshInterval: .seconds(5)),
             into: recorder
         )
-        let receivedInitialRead = await waitUntil { client.fetchCount == 1 }
-        XCTAssertTrue(receivedInitialRead)
 
-        for _ in 0..<8 {
-            client.sendRateLimitsUpdated()
-        }
-
-        let receivedNotificationRead = await waitUntil { client.fetchCount == 2 }
-        XCTAssertTrue(receivedNotificationRead)
+        let receivedInitialUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedInitialUpdate)
+        let releasedClient = await waitUntil { client.shutdownCount == 1 }
+        XCTAssertTrue(releasedClient)
+        client.sendRateLimitsUpdated()
         try await Task.sleep(for: .milliseconds(75))
-        XCTAssertEqual(client.fetchCount, 2)
-        XCTAssertEqual(recorder.successCount, 2)
+        XCTAssertEqual(client.fetchCount, 1)
         XCTAssertEqual(factory.creationCount, 1)
+        XCTAssertEqual(recorder.failureCount, 0)
+
+        consumer.cancel()
+        provider.stopMonitoring()
+    }
+
+    func testLocalEventPublishesBeforeNextPollWithoutCreatingAnotherClient() async throws {
+        let client = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 20))])
+        let factory = FakeCodexClientFactory(clients: [client])
+        let local = AsyncStream<UsageSnapshot>.makeStream()
+        let provider = CodexUsageProvider(
+            clientFactory: { try factory.makeClient() },
+            localUpdates: { local.stream }
+        )
+        let recorder = ProviderResultRecorder()
+        let consumer = consume(
+            provider.updates(refreshInterval: .seconds(5)),
+            into: recorder
+        )
+
+        let receivedInitialUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedInitialUpdate)
+        let baseline = try XCTUnwrap(recorder.successSnapshots.last)
+        let localSnapshot = try CodexUsageProvider.makeSnapshot(
+            from: makeResponse(used: 35),
+            // Ensure the injected event is strictly newer than the accepted API
+            // snapshot while remaining effectively at delivery time.
+            fetchedAt: baseline.fetchedAt.addingTimeInterval(0.000_001)
+        )
+        local.continuation.yield(localSnapshot)
+
+        let receivedLocalUpdate = await waitUntil { recorder.successCount == 2 }
+        XCTAssertTrue(receivedLocalUpdate)
+        XCTAssertEqual(recorder.successSnapshots.last?.remainingPercentage, 65)
+        XCTAssertEqual(factory.creationCount, 1)
+        XCTAssertEqual(client.fetchCount, 1)
+
+        consumer.cancel()
+        provider.stopMonitoring()
+    }
+
+    func testLocalEventsRejectOlderFutureAndWrongProviderSnapshots() async throws {
+        let client = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 20))])
+        let local = AsyncStream<UsageSnapshot>.makeStream()
+        let provider = CodexUsageProvider(
+            clientFactory: { client },
+            localUpdates: { local.stream }
+        )
+        let recorder = ProviderResultRecorder()
+        let consumer = consume(
+            provider.updates(refreshInterval: .seconds(5)),
+            into: recorder
+        )
+
+        let receivedInitialUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedInitialUpdate)
+        let baseline = try XCTUnwrap(recorder.successSnapshots.last)
+        let older = try CodexUsageProvider.makeSnapshot(
+            from: makeResponse(used: 50),
+            fetchedAt: baseline.fetchedAt.addingTimeInterval(-1)
+        )
+        local.continuation.yield(older)
+        local.continuation.yield(UsageSnapshot(
+            provider: .codex,
+            remainingFraction: 0.9,
+            resetAt: Date().addingTimeInterval(3600),
+            fetchedAt: Date().addingTimeInterval(60)
+        ))
+        local.continuation.yield(UsageSnapshot(
+            provider: .claude,
+            remainingFraction: 0.8,
+            resetAt: Date().addingTimeInterval(3600),
+            fetchedAt: Date().addingTimeInterval(1)
+        ))
+
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(recorder.successCount, 1)
+
+        consumer.cancel()
+        provider.stopMonitoring()
+    }
+
+    func testLocalSnapshotWithMissingWindowDoesNotReplaceAuthoritativeShape() async throws {
+        let client = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 20))])
+        let local = AsyncStream<UsageSnapshot>.makeStream()
+        let provider = CodexUsageProvider(
+            clientFactory: { client },
+            localUpdates: { local.stream }
+        )
+        let recorder = ProviderResultRecorder()
+        let consumer = consume(provider.updates(refreshInterval: .seconds(5)), into: recorder)
+
+        let receivedInitialUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedInitialUpdate)
+        let baseline = try XCTUnwrap(recorder.successSnapshots.last)
+        local.continuation.yield(UsageSnapshot(
+            provider: .codex,
+            fiveHour: nil,
+            weekly: UsageLimitWindow(
+                remainingFraction: 0.4,
+                resetAt: Date().addingTimeInterval(3600)
+            ),
+            fetchedAt: baseline.fetchedAt.addingTimeInterval(1)
+        ))
+
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(recorder.successCount, 1)
+        XCTAssertEqual(recorder.successSnapshots.last?.remainingPercentage, 80)
+
+        consumer.cancel()
+        provider.stopMonitoring()
+    }
+
+    func testNewerLocalSnapshotWinsOverSlowerInFlightAPIRead() async throws {
+        let client = FakeCodexAppServerClient(
+            responses: [.success(makeResponse(used: 20))],
+            fetchDelay: .milliseconds(100)
+        )
+        let local = AsyncStream<UsageSnapshot>.makeStream()
+        let provider = CodexUsageProvider(
+            clientFactory: { client },
+            localUpdates: { local.stream }
+        )
+        let recorder = ProviderResultRecorder()
+        let consumer = consume(provider.updates(refreshInterval: .seconds(5)), into: recorder)
+
+        let fetchStarted = await waitUntil { client.fetchCount == 1 }
+        XCTAssertTrue(fetchStarted)
+        local.continuation.yield(try CodexUsageProvider.makeSnapshot(
+            from: makeResponse(used: 35),
+            fetchedAt: Date()
+        ))
+
+        let receivedLocalUpdate = await waitUntil { recorder.successCount == 1 }
+        XCTAssertTrue(receivedLocalUpdate)
+        try await Task.sleep(for: .milliseconds(150))
+        XCTAssertEqual(recorder.successCount, 1)
+        XCTAssertEqual(recorder.successSnapshots.last?.remainingPercentage, 65)
 
         consumer.cancel()
         provider.stopMonitoring()
@@ -61,12 +206,10 @@ final class CodexUsageProviderTests: XCTestCase {
     func testReconnectEmitsOnlyOneFailurePerOutageAndClearsItOnSuccess() async throws {
         let first = FakeCodexAppServerClient(responses: [.failure(TestFailure.offline)])
         let second = FakeCodexAppServerClient(responses: [.failure(TestFailure.offline)])
-        let third = FakeCodexAppServerClient(responses: [
-            .success(makeResponse(used: 30)),
-            .failure(TestFailure.offline),
-        ])
+        let third = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 30))])
+        let fourth = FakeCodexAppServerClient(responses: [.failure(TestFailure.offline)])
         let recovered = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 40))])
-        let factory = FakeCodexClientFactory(clients: [first, second, third, recovered])
+        let factory = FakeCodexClientFactory(clients: [first, second, third, fourth, recovered])
         let provider = CodexUsageProvider(
             clientFactory: { try factory.makeClient() },
             reconnectBackoff: [.milliseconds(5), .milliseconds(10)]
@@ -82,10 +225,11 @@ final class CodexUsageProviderTests: XCTestCase {
         }
         XCTAssertTrue(recoveredTwice)
         XCTAssertEqual(recorder.failureCount, 2)
-        XCTAssertGreaterThanOrEqual(factory.creationCount, 4)
+        XCTAssertGreaterThanOrEqual(factory.creationCount, 5)
         XCTAssertEqual(first.shutdownCount, 1)
         XCTAssertEqual(second.shutdownCount, 1)
         XCTAssertEqual(third.shutdownCount, 1)
+        XCTAssertEqual(fourth.shutdownCount, 1)
 
         consumer.cancel()
         provider.stopMonitoring()
@@ -127,6 +271,7 @@ final class CodexUsageProviderTests: XCTestCase {
         XCTAssertEqual(snapshot.remainingPercentage, 77)
         XCTAssertEqual(try XCTUnwrap(snapshot.resetAt).timeIntervalSince1970, 1_900_003_000)
         XCTAssertEqual(client.fetchCount, 3)
+        XCTAssertEqual(client.shutdownCount, 1)
         provider.shutdown()
     }
 
@@ -176,6 +321,31 @@ final class CodexUsageProviderTests: XCTestCase {
         provider.shutdown()
     }
 
+    func testEachFreshClientConfirmsTransientFullRead() async throws {
+        let first = FakeCodexAppServerClient(responses: [
+            .success(makeResponse(used: 25)),
+        ])
+        let second = FakeCodexAppServerClient(responses: [
+            .success(makeResponse(used: 0, primaryResetAt: 1_900_000_000)),
+            .success(makeResponse(used: 40, primaryResetAt: 1_900_000_100)),
+            .success(makeResponse(used: 40, primaryResetAt: 1_900_000_200)),
+        ])
+        let factory = FakeCodexClientFactory(clients: [first, second])
+        let provider = CodexUsageProvider(clientFactory: { try factory.makeClient() })
+
+        let firstSnapshot = try await provider.fetchUsage()
+        let secondSnapshot = try await provider.fetchUsage()
+
+        XCTAssertEqual(firstSnapshot.remainingPercentage, 75)
+        XCTAssertEqual(secondSnapshot.remainingPercentage, 60)
+        XCTAssertEqual(factory.creationCount, 2)
+        XCTAssertEqual(first.fetchCount, 1)
+        XCTAssertEqual(second.fetchCount, 3)
+        XCTAssertEqual(first.shutdownCount, 1)
+        XCTAssertEqual(second.shutdownCount, 1)
+        provider.shutdown()
+    }
+
     func testStopPreventsOldReconnectButLaterSubscriptionCanStartAgain() async throws {
         let offline = FakeCodexAppServerClient(responses: [.failure(TestFailure.offline)])
         let recovered = FakeCodexAppServerClient(responses: [.success(makeResponse(used: 15))])
@@ -208,6 +378,8 @@ final class CodexUsageProviderTests: XCTestCase {
         XCTAssertEqual(factory.creationCount, creationCountAtStop + 1)
 
         secondConsumer.cancel()
+        let releasedRecoveredClient = await waitUntil { recovered.shutdownCount == 1 }
+        XCTAssertTrue(releasedRecoveredClient)
         provider.shutdown()
     }
 
@@ -244,6 +416,15 @@ private enum TestFailure: Error, LocalizedError {
 private final class ProviderResultRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var results: [ProviderUsageResult] = []
+
+    var successSnapshots: [UsageSnapshot] {
+        lock.withLock {
+            results.compactMap {
+                guard case let .success(snapshot) = $0 else { return nil }
+                return snapshot
+            }
+        }
+    }
 
     var successCount: Int {
         lock.withLock { results.filter { if case .success = $0 { true } else { false } }.count }

@@ -15,6 +15,7 @@ final actor CodexUsageProvider: UsageFetching {
     nonisolated let provider = UsageProvider.codex
 
     typealias ClientFactory = @Sendable () throws -> any CodexAppServerServing
+    typealias LocalUpdateStreamFactory = @Sendable () -> AsyncStream<UsageSnapshot>
 
     private static let effectivelyFullRemainingFraction = 0.995
     private static let initialConfirmationReadCount = 2
@@ -38,6 +39,11 @@ final actor CodexUsageProvider: UsageFetching {
     private struct Subscriber {
         let session: UInt64
         let continuation: AsyncStream<ProviderUsageResult>.Continuation
+    }
+
+    private struct SnapshotShape: Equatable {
+        let hasFiveHour: Bool
+        let hasWeekly: Bool
     }
 
     private enum WaitOutcome {
@@ -107,6 +113,7 @@ final actor CodexUsageProvider: UsageFetching {
     ]
 
     private let clientFactory: ClientFactory
+    private let localUpdates: LocalUpdateStreamFactory
     private let reconnectBackoff: [Duration]
     private let lifecycle = Lifecycle()
 
@@ -116,21 +123,26 @@ final actor CodexUsageProvider: UsageFetching {
     private var readOperation: ReadOperation?
     private var notificationTask: Task<Void, Never>?
     private var notificationCoalesceTask: Task<Void, Never>?
+    private var localUpdateTask: Task<Void, Never>?
     private var monitorTask: Task<Void, Never>?
     private var monitorSleep: (id: UUID, task: Task<Void, any Error>)?
     private var activeSession: UInt64?
     private var subscribers: [UUID: Subscriber] = [:]
     private var lastPublishedReadID: UUID?
-    private var hasCompletedInitialSuccessfulRead = false
     private var outageFailureEmitted = false
     private var pendingImmediateRefresh = false
     private var pendingConnectionClosed = false
+    private var latestPublishedSnapshotFetchedAt: Date?
+    private var latestPublishedSnapshotShape: SnapshotShape?
 
     init(
         executableURL: URL? = nil,
         arguments: [String]? = nil,
         requestTimeout: TimeInterval = 8,
-        reconnectBackoff: [Duration] = CodexUsageProvider.defaultReconnectBackoff
+        reconnectBackoff: [Duration] = CodexUsageProvider.defaultReconnectBackoff,
+        localUpdates: @escaping LocalUpdateStreamFactory = {
+            CodexUsageProvider.makeDefaultLocalUpdates()
+        }
     ) {
         clientFactory = {
             guard let url = executableURL ?? ExecutableLocator.locate("codex") else {
@@ -145,16 +157,21 @@ final actor CodexUsageProvider: UsageFetching {
         self.reconnectBackoff = reconnectBackoff.isEmpty
             ? Self.defaultReconnectBackoff
             : reconnectBackoff
+        self.localUpdates = localUpdates
     }
 
     init(
         clientFactory: @escaping ClientFactory,
-        reconnectBackoff: [Duration] = CodexUsageProvider.defaultReconnectBackoff
+        reconnectBackoff: [Duration] = CodexUsageProvider.defaultReconnectBackoff,
+        localUpdates: @escaping LocalUpdateStreamFactory = {
+            CodexUsageProvider.emptyLocalUpdates()
+        }
     ) {
         self.clientFactory = clientFactory
         self.reconnectBackoff = reconnectBackoff.isEmpty
             ? Self.defaultReconnectBackoff
             : reconnectBackoff
+        self.localUpdates = localUpdates
     }
 
     nonisolated func updates(
@@ -219,6 +236,7 @@ final actor CodexUsageProvider: UsageFetching {
         monitorSleep?.task.cancel()
         notificationTask?.cancel()
         notificationCoalesceTask?.cancel()
+        localUpdateTask?.cancel()
         connectionOperation?.task.cancel()
         readOperation?.task.cancel()
         client?.value.shutdown()
@@ -236,12 +254,22 @@ final actor CodexUsageProvider: UsageFetching {
         }
 
         subscribers[id] = Subscriber(session: session, continuation: continuation)
+        if activeSession != session {
+            latestPublishedSnapshotFetchedAt = nil
+            latestPublishedSnapshotShape = nil
+        }
         activeSession = session
         restartMonitor(session: session, refreshInterval: refreshInterval)
+        startLocalUpdateListener(session: session)
     }
 
     private func removeSubscriber(_ id: UUID) {
-        subscribers.removeValue(forKey: id)
+        guard subscribers.removeValue(forKey: id) != nil,
+            subscribers.isEmpty
+        else { return }
+
+        let generation = lifecycle.stopMonitoring()
+        stopMonitoringIsolated(generation: generation)
     }
 
     private func restartMonitor(session: UInt64, refreshInterval: Duration) {
@@ -255,6 +283,17 @@ final actor CodexUsageProvider: UsageFetching {
 
         monitorTask = Task { [weak self] in
             await self?.runMonitor(session: session, refreshInterval: refreshInterval)
+        }
+    }
+
+    private func startLocalUpdateListener(session: UInt64) {
+        localUpdateTask?.cancel()
+        let updates = localUpdates()
+        localUpdateTask = Task { [weak self] in
+            for await snapshot in updates {
+                guard !Task.isCancelled else { return }
+                await self?.handleLocalSnapshot(snapshot, session: session)
+            }
         }
     }
 
@@ -336,7 +375,6 @@ final actor CodexUsageProvider: UsageFetching {
     private func authoritativeRead() async throws -> ReadResult {
         if let operation = readOperation {
             let result = try await operation.task.value
-            hasCompletedInitialSuccessfulRead = true
             return result
         }
 
@@ -345,19 +383,16 @@ final actor CodexUsageProvider: UsageFetching {
         // installed the shared read while this caller was waiting for the same handshake.
         if let operation = readOperation {
             let result = try await operation.task.value
-            hasCompletedInitialSuccessfulRead = true
             return result
         }
 
         let operationID = UUID()
-        let shouldConfirmInitialRead = !hasCompletedInitialSuccessfulRead
         let task = Task {
+            let fetchedAt = Date()
             let response = try await connectedClient.fetchRateLimits()
-            let initialSnapshot = try Self.makeSnapshot(from: response)
+            let initialSnapshot = try Self.makeSnapshot(from: response, fetchedAt: fetchedAt)
             let snapshot: UsageSnapshot
-            if shouldConfirmInitialRead,
-                initialSnapshot.remainingFraction >= Self.effectivelyFullRemainingFraction
-            {
+            if initialSnapshot.remainingFraction >= Self.effectivelyFullRemainingFraction {
                 snapshot = try await Self.confirmInitialFullSnapshot(
                     initialSnapshot,
                     using: connectedClient
@@ -374,8 +409,10 @@ final actor CodexUsageProvider: UsageFetching {
 
         do {
             let result = try await task.value
-            if readOperation?.id == operationID { readOperation = nil }
-            hasCompletedInitialSuccessfulRead = true
+            if readOperation?.id == operationID {
+                readOperation = nil
+                disconnectClient()
+            }
             return result
         } catch {
             if readOperation?.id == operationID { readOperation = nil }
@@ -392,8 +429,9 @@ final actor CodexUsageProvider: UsageFetching {
         for _ in 0..<initialConfirmationReadCount {
             do {
                 try Task.checkCancellation()
+                let fetchedAt = Date()
                 let response = try await client.fetchRateLimits()
-                let candidate = try makeSnapshot(from: response)
+                let candidate = try makeSnapshot(from: response, fetchedAt: fetchedAt)
                 guard let candidateResetAt = candidate.resetAt,
                       let selectedResetAt = selectedSnapshot.resetAt
                 else { continue }
@@ -535,9 +573,50 @@ final actor CodexUsageProvider: UsageFetching {
     private func publishSuccess(_ read: ReadResult) {
         guard lastPublishedReadID != read.id else { return }
         lastPublishedReadID = read.id
+        guard accepts(snapshot: read.snapshot, allowShapeChange: true) else { return }
         outageFailureEmitted = false
         let result = ProviderUsageResult.success(read.snapshot)
+        recordAccepted(snapshot: read.snapshot)
         yield(result)
+    }
+
+    private func handleLocalSnapshot(_ snapshot: UsageSnapshot, session: UInt64) {
+        guard lifecycle.isActive(session), activeSession == session,
+            snapshot.provider == .codex,
+            snapshot.fetchedAt <= Date(),
+            accepts(snapshot: snapshot, allowShapeChange: false)
+        else { return }
+
+        outageFailureEmitted = false
+        recordAccepted(snapshot: snapshot)
+        yield(.success(snapshot))
+    }
+
+    private func accepts(snapshot: UsageSnapshot, allowShapeChange: Bool) -> Bool {
+        if let latestPublishedSnapshotFetchedAt,
+            snapshot.fetchedAt <= latestPublishedSnapshotFetchedAt
+        {
+            return false
+        }
+        if !allowShapeChange,
+            let latestPublishedSnapshotShape,
+            latestPublishedSnapshotShape != snapshotShape(snapshot)
+        {
+            return false
+        }
+        return true
+    }
+
+    private func recordAccepted(snapshot: UsageSnapshot) {
+        latestPublishedSnapshotFetchedAt = snapshot.fetchedAt
+        latestPublishedSnapshotShape = snapshotShape(snapshot)
+    }
+
+    private func snapshotShape(_ snapshot: UsageSnapshot) -> SnapshotShape {
+        SnapshotShape(
+            hasFiveHour: snapshot.fiveHour != nil,
+            hasWeekly: snapshot.weekly != nil
+        )
     }
 
     private func publishFailureOnce(_ error: any Error) {
@@ -564,6 +643,8 @@ final actor CodexUsageProvider: UsageFetching {
         disconnectClient()
         outageFailureEmitted = false
         lastPublishedReadID = nil
+        latestPublishedSnapshotFetchedAt = nil
+        latestPublishedSnapshotShape = nil
     }
 
     private func shutdownIsolated() {
@@ -574,6 +655,8 @@ final actor CodexUsageProvider: UsageFetching {
         }
         subscribers.removeAll()
         disconnectClient()
+        latestPublishedSnapshotFetchedAt = nil
+        latestPublishedSnapshotShape = nil
     }
 
     private func cancelMonitoringTasks() {
@@ -583,6 +666,8 @@ final actor CodexUsageProvider: UsageFetching {
         monitorSleep = nil
         notificationCoalesceTask?.cancel()
         notificationCoalesceTask = nil
+        localUpdateTask?.cancel()
+        localUpdateTask = nil
         pendingImmediateRefresh = false
         pendingConnectionClosed = false
     }
@@ -611,6 +696,20 @@ final actor CodexUsageProvider: UsageFetching {
         let disconnected = client?.value
         client = nil
         disconnected?.shutdown()
+    }
+
+    private static func makeDefaultLocalUpdates() -> AsyncStream<UsageSnapshot> {
+        AsyncStream { continuation in
+            let watcher = CodexUsageFileWatcher()
+            watcher.start(continuation)
+            continuation.onTermination = { _ in watcher.stop() }
+        }
+    }
+
+    private static func emptyLocalUpdates() -> AsyncStream<UsageSnapshot> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
     }
 
     nonisolated static func makeSnapshot(

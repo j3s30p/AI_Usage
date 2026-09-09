@@ -100,7 +100,7 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
         let now = Date.now
         let segments = providers.map { provider in
-            let snapshot = menuBarSnapshot(for: provider, at: now)
+            let snapshot = model.state(for: provider).snapshot
             let window = snapshot?.menuBarWindow
             return MenuBarStatusSegment(
                 name: provider.displayName,
@@ -110,8 +110,8 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
                 logoSourceInsetFraction: provider.logoSourceInsetFraction,
                 remainingFraction: window?.remainingFraction,
                 percentageText: preferences.showPercentage
-                    ? window.map { "\($0.remainingPercentage)%" }
-                    : nil
+                    ? window.map { "\($0.remainingPercentage)%" } : nil,
+                isStale: snapshot.map { !isCurrent($0, at: now) } ?? false
             )
         }
         let rendering = MenuBarStatusImageRenderer.makeRendering(
@@ -125,7 +125,17 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
 
         let accessibilityLabel = providers.map { provider in
             let state = model.state(for: provider)
-            if let snapshot = menuBarSnapshot(for: provider, at: now) {
+            if let snapshot = state.snapshot {
+                if !isCurrent(snapshot, at: now) {
+                    return String(
+                        format: String(localized: "%@ usage, update delayed, as of %@"),
+                        provider.displayName,
+                        snapshot.fetchedAt.formatted(
+                            date: .abbreviated,
+                            time: .shortened
+                        )
+                    )
+                }
                 return String(
                     format: String(localized: "%@, %d%% remaining"),
                     provider.displayName,
@@ -150,15 +160,11 @@ final class MenuBarController: NSObject, NSPopoverDelegate {
         button.toolTip = accessibilityLabel
     }
 
-    private func menuBarSnapshot(
-        for provider: UsageProvider,
-        at date: Date
-    ) -> UsageSnapshot? {
-        guard let snapshot = model.state(for: provider).snapshot else { return nil }
+    private func isCurrent(_ snapshot: UsageSnapshot, at date: Date) -> Bool {
         return snapshot.isCurrent(
             at: date,
             maximumAge: preferences.refreshInterval.maximumExpectedSnapshotAge
-        ) ? snapshot : nil
+        )
     }
 
     @objc

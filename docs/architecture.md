@@ -18,6 +18,8 @@ The main data path is:
 ```text
 AppPreferences → AppDelegate → AppModel → UsageRepository
                                            ├─ CodexUsageProvider
+                                           │  ├─ CodexUsageFileWatcher (local events)
+                                           │  └─ CodexAppServerClient (initial and periodic reads)
                                            └─ ClaudeUsageProvider
 ```
 
@@ -31,9 +33,17 @@ At launch and every 24 hours, AiUsage asks Sparkle to probe the signed appcast w
 
 ## Codex
 
-AiUsage keeps one local `codex app-server` connection while Codex is enabled. At the selected interval it calls the official `account/rateLimits/read` method, reads the 300-minute and 10,080-minute windows, and reconnects with backoff after a disconnection.
+Codex updates use local file events, with API checks at startup and the selected interval.
 
-When a response contains both default Codex and model-specific limits, AiUsage uses only the explicit `codex` limit. If the default limit briefly disappears from a multi-limit response, AiUsage reports a fetch failure instead of substituting another model's 100% value. A recent valid value remains visible within the allowed age for the selected refresh interval.
+The file watcher uses one native macOS event stream for `CODEX_HOME/sessions`, or `~/.codex/sessions` by default. Desktop and CLI sessions can write JSONL `event_msg` records with a `token_count.rate_limits` payload. AiUsage reads bounded portions of changed files and publishes valid `codex` usage records directly. It does not scan the full session history, start a child process, or make a network request for each event. Unrelated contents are discarded without storage or logging. Stopping monitoring releases the event stream and buffers.
+
+API checks launch `codex -s read-only -a on-request app-server --listen stdio://` and call `account/rateLimits/read`. Concurrent requests share one read. A near-100% result on a fresh connection gets up to two confirmation reads to avoid displaying a transient startup value. The child exits after a successful read; failures use retry backoff. These metadata requests do not invoke a model. Scheduled checks continue while file events arrive and cover missing records, other-device usage, and periods when Codex is closed.
+
+Only available five-hour and weekly windows are displayed. Local records retain their timestamps; API samples use the request start time. Older results cannot overwrite newer ones. A local record with a different window layout waits for the next API check rather than removing an existing window. Model-specific buckets cannot replace an explicit `codex` bucket. The menu bar keeps the last valid value, marking it with a warning and an as-of description when it becomes stale.
+
+File-driven updates happen after Codex writes a record. The private JSONL format may change, so API checks remain necessary. This is not a guarantee of immediate delivery from OpenAI's service.
+
+For API checks, AiUsage finds the desktop app by bundle ID `com.openai.codex` and uses `Contents/Resources/codex`. Standard `Codex.app` and `ChatGPT.app` locations, standalone CLI paths, and `PATH` are fallbacks. This supports desktop users without a separate CLI install. The selected executable uses its existing ChatGPT login; AiUsage does not copy credentials or start a login flow. A browser-only login is insufficient. See OpenAI's [authentication guide](https://learn.chatgpt.com/docs/auth#login-caching).
 
 ## Claude sources
 
@@ -41,6 +51,8 @@ The user chooses between two modes backed by three inputs. The default is `Local
 
 - Local caches checks the Claude Code statusLine cache first. A current statusLine snapshot is returned without reading Claude Desktop data. If the statusLine snapshot is unavailable, stale, or past its reset time, AiUsage checks Claude Desktop usage history. It uses Desktop data when that sample is current or newer; otherwise it retains a parsed statusLine snapshot.
 - OAuth checks the private OAuth endpoint first. If that fails, AiUsage runs the same statusLine-to-Desktop local chain.
+
+In Local caches mode, macOS file-change notifications trigger a refresh when the statusLine cache or Desktop usage history changes. The watcher handles atomic file replacement and files created after monitoring starts, and bursts are coalesced. Notifications rerun the source selection above: a current statusLine sample still takes precedence over Desktop history. The selected periodic refresh interval remains a fallback if a notification is missed or a file cannot be watched. Stopping monitoring or changing the source releases the watchers. OAuth mode uses periodic refreshes; local file writes do not trigger extra OAuth requests.
 
 ### statusLine cache
 

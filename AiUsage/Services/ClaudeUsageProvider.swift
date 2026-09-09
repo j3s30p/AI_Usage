@@ -181,7 +181,7 @@ struct ClaudeUsageProvider: UsageFetching {
         )
     }
 
-    private static let defaultCacheURL = FileManager.default.homeDirectoryForCurrentUser
+    static let defaultCacheURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".claude", isDirectory: true)
         .appendingPathComponent("usage-cache.json", isDirectory: false)
 

@@ -11,7 +11,7 @@ final class AppModel {
     private(set) var lastRefreshAt: Date?
 
     @ObservationIgnored private let repository: any UsageRepositoryProtocol
-    @ObservationIgnored private var refreshGeneration = 0
+    @ObservationIgnored private var refreshGenerations: [UsageProvider: Int] = [:]
     @ObservationIgnored private var activeRefreshCount = 0
     @ObservationIgnored private var activeClaudeUsageMode: ClaudeUsageMode?
 
@@ -30,7 +30,7 @@ final class AppModel {
         guard activeClaudeUsageMode != mode else { return }
         if activeClaudeUsageMode != nil {
             states[.claude] = .idle
-            refreshGeneration += 1
+            refreshGenerations[.claude, default: 0] += 1
         }
         activeClaudeUsageMode = mode
     }
@@ -47,8 +47,12 @@ final class AppModel {
             selectClaudeUsageMode(claudeUsageMode)
         }
 
-        refreshGeneration += 1
-        let generation = refreshGeneration
+        for provider in providers {
+            refreshGenerations[provider, default: 0] += 1
+        }
+        let generations = providers.reduce(into: [:]) { result, provider in
+            result[provider] = refreshGenerations[provider, default: 0]
+        }
         activeRefreshCount += 1
         isRefreshing = true
 
@@ -68,7 +72,9 @@ final class AppModel {
             }
 
             for await (provider, result) in group {
-                guard !Task.isCancelled, generation == refreshGeneration else { continue }
+                guard !Task.isCancelled,
+                      generations[provider] == refreshGenerations[provider]
+                else { continue }
 
                 let previous = state(for: provider).snapshot
                 switch result {
@@ -138,6 +144,18 @@ final class AppModel {
                     for await update in updates {
                         guard !Task.isCancelled, let self else { return }
                         await self.apply(update)
+                    }
+                }
+            }
+
+            if providers.contains(.claude), claudeUsageMode == .statusLine {
+                group.addTask { [weak self, repository] in
+                    for await _ in repository.claudeUsageFileChanges() {
+                        guard !Task.isCancelled, let self else { return }
+                        await self.refresh(
+                            providers: [.claude],
+                            claudeUsageMode: .statusLine
+                        )
                     }
                 }
             }

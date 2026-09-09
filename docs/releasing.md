@@ -61,14 +61,25 @@ committed in `Config/AiUsage-Info.plist`; never commit the private key.
 
 1. Set `MARKETING_VERSION` to the new semantic version.
 2. Increment `CURRENT_PROJECT_VERSION` to an integer greater than the previous build.
-3. Confirm that the README and technical documentation match the implementation and distribution state.
+3. Update [CHANGELOG.md](../CHANGELOG.md) with the user-visible changes. For bug fixes, record the symptom, cause, and fix. Keep the README and technical documentation consistent with the implementation.
 4. Run the complete test suite and verify a universal Release build.
 5. Merge the pull request and synchronize local `main`.
 
-The current `v1.3.0` project values are:
+The current `v1.3.1` project values are:
 
-- `MARKETING_VERSION = 1.3.0`
-- `CURRENT_PROJECT_VERSION = 9`
+- `MARKETING_VERSION = 1.3.1`
+- `CURRENT_PROJECT_VERSION = 10`
+
+### Check usage updates
+
+Before publishing a change to usage tracking:
+
+1. Run the full test suite, including local-file creation, append, replacement, malformed-data, and cancellation cases.
+2. Run the opt-in Codex live test with `TEST_RUNNER_AIUSAGE_LIVE_TESTS=1`. Confirm it runs rather than skips, reads the account's available windows, and verifies that its query process exits.
+3. With the popover closed, confirm that new Codex and Claude local usage records reach the menu bar before the next scheduled refresh. The source must actually write a new record; an unchanged percentage alone does not show whether an update arrived.
+4. Confirm that scheduled queries still run when no local record arrives, and that an unavailable source leaves the last value visible with the delayed-data marker once it becomes stale.
+
+Use temporary files for synthetic events. Do not alter real session histories or start AI conversations just to generate test data.
 
 ## Tag and publish a GitHub Release
 
@@ -78,8 +89,8 @@ After confirming that the merge commit is in `origin/main`:
 git fetch origin main --tags
 git switch main
 git pull --ff-only origin main
-git tag -a v1.3.0 -m "AiUsage v1.3.0"
-git push origin v1.3.0
+git tag -a v1.3.1 -m "AiUsage v1.3.1"
+git push origin v1.3.1
 ```
 
 Pushing the tag starts `.github/workflows/release.yml`, which:
@@ -100,12 +111,14 @@ Pushing the tag starts `.github/workflows/release.yml`, which:
 
 No GitHub Release is created unless notarization is accepted and every verification succeeds.
 
+After publication, update the GitHub release notes from the matching changelog entry so users can see the cause and resolution of each fix.
+
 ## Verify the published release
 
 Download the ZIP from GitHub into a clean directory and repeat the distribution checks:
 
 ```bash
-ditto -x -k AiUsage-v1.3.0-macos-universal.zip verify
+ditto -x -k AiUsage-v1.3.1-macos-universal.zip verify
 codesign --verify --deep --strict --verbose=2 verify/AiUsage.app
 spctl --assess --type execute --verbose=4 verify/AiUsage.app
 xcrun stapler validate verify/AiUsage.app
